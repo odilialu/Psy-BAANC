@@ -9,7 +9,7 @@ dirString = "Y:\paperExperiments\social CPP\SkinnerBoxExperiment\052424_post"; %
 videoType = 'mkv'; % current video format (i.e., mp4, avi, wmv, etc.)
 framerate = 30; % desired fps of output video
 start_min = 0; % for trimming video, set start time, in min (If no trim to beginning, set start_min = 0). 
-end_min = 30; % for trimming video, how long do you want the video to be, in min? 
+end_min = 30; % for trimming video, set desired end time, in min
 cropConsistent = 1; % do you want to crop all videos in the folder consistently (1 = yes, 0 = no; crop each video individually). 
 
 %% generate a string array of the video paths 
