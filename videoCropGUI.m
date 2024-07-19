@@ -114,7 +114,7 @@ if cropConsistent == 0
         f = waitbar(.5,'Cropping Video...');
         
         startExp = framerate*start_s+1;
-        lengthExp = (framerate*end_min*60)+startExp; 
+        lengthExp = (framerate*end_sec)+startExp; 
         
         for j = startExp:lengthExp % define what part of vid to keep 
             frame = read(video, j); % read frame
