@@ -1,15 +1,15 @@
 %% Crop and cut videos 
 % Christine Liu GUI for Odilia Lu videoCrop.m script 
-% Last edited July 16,2024
+% Last edited July 19,2024
 % Writes to your current directory 
 
 clear all
 
 %% User input settings 
-inputs = inputdlg({"Video Type: (i.e. mp4, avi, wmv, etc.)", "Frame Rate:", "Minutes to Analyze:", "Crop videos individually (0) or all at once (1)?"},"Settings",[1 40; 1 40; 1 40; 1 40],{'avi','10','10','0'});
+inputs = inputdlg({"Video Type: (i.e. mp4, avi, wmv, etc.)", "Frame Rate:", "Seconds to Analyze:", "Crop videos individually (0) or all at once (1)?"},"Settings",[1 40; 1 40; 1 40; 1 40],{'avi','10','10','0'});
 videoType = inputs{1};
 framerate = str2double(inputs{2});
-end_min = str2double(inputs{3});
+end_sec = str2double(inputs{3});
 cropConsistent = str2double(inputs{4});
 
 dirString = string(uigetdir('C:\',"Load folder containing videos"));
@@ -54,7 +54,7 @@ if cropConsistent == 1
     title('Crop all videos in dir at once');
     rectCoords = getrect;
     answer = inputdlg({'Time start (s):', 'Add suffix to filename:'});
-    start_s = answer{1};
+    start_s = str2double(answer{1});
     suffix = answer{2};
     
     f = waitbar(0,'Cropping Videos...');
@@ -67,7 +67,7 @@ if cropConsistent == 1
         open(writer); 
         waitbar(i/length(strVids),f,'Cropping Videos...')
         startExp = framerate*start_s+1;
-        lengthExp = (framerate*end_min*60)+startExp; 
+        lengthExp = (framerate*end_sec)+startExp; 
     
         for j = startExp:lengthExp % define what part of vid to keep 
             frame = read(video, j); % read frame
@@ -79,6 +79,7 @@ if cropConsistent == 1
     end
     close(f);
     d = msgbox("Done Cropping");
+    close all
 end
 % main
 
