@@ -2,6 +2,7 @@
 % Christine Liu GUI for Odilia Lu videoCrop.m script 
 % Last edited July 19,2024
 % Writes to your current directory 
+% Requires MATLAB Image Processing Toolbox
 
 clear all
 
@@ -46,26 +47,27 @@ end
 
 %% cropping and cutting 
 
-% set cropping parameters
+% crop all videos in folder
 if cropConsistent == 1
     video = VideoReader(strVids(1, 1)); 
     frame = read(video, 1);
     imshow(frame)
-    title('Crop all videos in dir at once');
-    rectCoords = getrect;
+    title('Crop all videos in folder at once; double click to confirm crop');
+    h = drawrectangle;
+    rectCoords = customWait(h);
     answer = inputdlg({'Time start (s):', 'Add suffix to filename:'});
     start_s = str2double(answer{1});
     suffix = answer{2};
     
-    f = waitbar(0,'Cropping Videos...');
+    %f = waitbar(0,'Cropping Videos...');
 
-    for i = 1:length(strVids)
+    parfor i = 1:length(strVids)
         video = VideoReader(strVids(i, 1)); 
         writer = VideoWriter(strcat(filename(i, 1), '_',suffix)); 
         writer.FrameRate = framerate;
         
         open(writer); 
-        waitbar(i/length(strVids),f,'Cropping Videos...')
+        %waitbar(.5,f,'Cropping Videos...')
         startExp = framerate*start_s+1;
         lengthExp = (framerate*end_sec)+startExp; 
     
@@ -77,13 +79,12 @@ if cropConsistent == 1
     
         close(writer); 
     end
-    close(f);
+    %close(f);
     d = msgbox("Done Cropping");
     close all
 end
-% main
 
-
+% crop videos individually
 if cropConsistent == 0
     [indx, tf] = listdlg('ListString',strVids,'SelectionMode','single','ListSize',[800,300]);
 
@@ -104,9 +105,9 @@ if cropConsistent == 0
 
         start_s = str2double(answer{1});
         suffix = answer{2};
-        title(strcat(filename(indx, 1), '_',suffix), 'Interpreter','none');
-        rectCoords = getrect;
-
+        title(strcat(filename(indx, 1), '_',suffix,': Double click to confirm crop'), 'Interpreter','none');
+        h = drawrectangle;
+        rectCoords = customWait(h);
         writer = VideoWriter(strcat(filename(indx, 1), '_',suffix)); 
         writer.FrameRate = framerate;
 
@@ -129,5 +130,18 @@ if cropConsistent == 0
 
     if tf == 0
         close all
+    end
+end
+
+function pos = customWait(hROI)
+    l = addlistener(hROI,'ROIClicked',@clickCallback);
+    uiwait;
+    delete(l);
+    pos = hROI.Position;
+end
+
+function clickCallback(~,evt)
+    if strcmp(evt.SelectionType,'double')
+        uiresume;
     end
 end
