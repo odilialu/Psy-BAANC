@@ -1,0 +1,620 @@
+---
+title: "Psy-BAANC Methodological Factors Pipeline"
+output: html_notebook
+---
+```{r}
+# Load necessary libraries
+library(lme4)   # for linear mixed effects models
+library(dplyr)  # for data manipulation
+library(MuMIn) # for R squared
+library(lmerTest) # for model comparison
+```
+
+# Step 1: Clean & process data
+
+```{r}
+# Load data frame with all experimental meta data
+
+meta = read.csv("/media/data01/processed/private_data/behavior/250211_metadata.csv")
+```
+
+```{r}
+# Split the dataframe into smaller dataframes based on 'expt' column
+
+splits <- split(meta, meta$experiment)
+```
+
+```{r}
+# Function "clean_experiment_data" to remove all columns w/ blank value or constant value columns
+
+clean_experiment_data <- function(expt_list) {
+  # Initialize an empty list to store cleaned data frames
+  cleaned_list <- list()
+
+  # Iterate over each experiment and its data frame
+  for (expt_name in names(expt_list)) {
+    df <- expt_list[[expt_name]]  # Extract the data frame for the current experiment
+    
+    # Identify columns that are entirely blank (NA) or constant across all rows
+    cols_to_remove <- sapply(df, function(col) {
+      # Check if the column is entirely NA or has only one unique value
+      all_na <- all(is.na(col))
+      all_same_value <- length(unique(col)) == 1
+      return(all_na || all_same_value)
+    })
+    
+    # Remove the columns that are entirely blank or have the same value
+    cleaned_df <- df[, !cols_to_remove]
+    
+    # Store the cleaned data frame back into the list
+    cleaned_list[[expt_name]] <- cleaned_df
+  }
+
+  # Return the updated list with cleaned data frames
+  return(cleaned_list)
+}
+
+# Clean the data frames
+cleaned_splits <- clean_experiment_data(splits)
+```
+
+```{r}
+# Function "process_column_types" assigns each meta variable its appropriate value type, as a numeric or a factor
+
+process_column_types <- function(cleaned_expt_list) {
+  # Define the columns that should be numeric or factor
+  numeric_columns <- c( "age", "weight", "timepoint", "handling", "injections", "acclimation", "h_wall", "L", "L1_3C", "L2_3C", "w", "h_floor", "center_defined",  "d_FST", "d1_NOR", "d2_NOR", "novel_object_area", "novel_object_height", "familiar_object_area", "familiar_object_height", "social_cup_baseArea", "social_cup_height", "water_depth", "other_mice", "prior_expts", "cagemates", "percent_open", "percent_center", "velocity", "d3_immobility", "d1_immobility", "delta_immobility","social_score", "discrimination_index", "avg_time_exploring", "htr_total", "social_preference_score", "time_social_pre", "time_social_post", "social_cond_mice", "tone_frequency", "tone_amplitude", "percent_freezing_retrieval", "percent_freezing_ex1", "percent_freezing_ex2")   
+  factor_columns <- c("mouse_ID", "cage_ID", "institution", "lab", "treatment", "sex", "analysis", "exptr_sex", "epm_lip","expt_time", "counterbalanced_object_location", "counterbalanced_cup_location", "juv_or_no_ovary", "same_treatment", "pip_vs_pure", "expt_time_enc", "expt_time_retr", "expt_time_ex1", "expt_time_ex2")  
+
+  # Initialize an empty list to store processed data frames
+  processed_list <- list()
+
+  # Iterate over each experiment data frame in the cleaned list
+  for (expt_name in names(cleaned_expt_list)) {
+    df <- cleaned_expt_list[[expt_name]]  # Extract the cleaned data frame
+
+    # Convert columns to numeric where appropriate
+    for (col_name in numeric_columns) {
+      if (col_name %in% names(df)) {
+        df[[col_name]] <- as.numeric(df[[col_name]])
+      }
+    }
+
+    # Convert columns to factor where appropriate
+    for (col_name in factor_columns) {
+      if (col_name %in% names(df)) {
+        df[[col_name]] <- as.factor(df[[col_name]])
+      }
+    }
+
+    # Store the processed data frame in the result list
+    processed_list[[expt_name]] <- df
+  }
+
+  # Return the updated list of processed data frames
+  return(processed_list)
+}
+
+# Process the data frames
+processed_splits <- process_column_types(cleaned_splits)
+```
+
+# Step 2: Create Linear Mixed Effects Models
+
+```{r}
+# Function "create_lme_formula" creates an lme formula and returns it as a list with the expt name, and the formula
+
+create_lme_formula <- function(expt_list, expt_name, y_value) {
+  
+  # Define possible fixed effects column names
+  # Modify based on your needs
+  
+  fixed_effects_candidates <- c("treatment", "sex",  "age", "weight", "handling", "acclimation", "L", "w", "epm_lip",  "d_FST", "d1_NOR", "d2_NOR", "water_depth", "other_mice", "juv_or_no_ovary",  "cagemates", "tone_frequency", "tone_amplitude", "social_cond_mice","pip_vs_pure","injections", "h_wall", "h_floor", "center_defined", "same_treatment","expt_time", "prior_expts", "timepoint" )  
+  # , "expt_time_enc", "expt_time_retr", "expt_time_ex1", "expt_time_ex2",   remove or add for Fear Conditioning
+  
+  # Retrieve the data frame for the specified experiment
+  df <- expt_list[[expt_name]]
+  
+  # Find columns that match the fixed effects candidates
+  fixed_effects <- intersect(fixed_effects_candidates, colnames(df))
+  
+  # Ensure the y_value is included in the data frame
+  if (!y_value %in% colnames(df)) {
+    stop(paste("The specified y_value column", y_value, "is not in the data frame"))
+  }
+  
+  # Construct the fixed effects part of the formula
+  fixed_formula <- paste(fixed_effects, collapse = " + ")
+  
+  # If there are any fixed effects, combine them with the y_value (dependent variable)
+  if (length(fixed_effects) > 0) {
+    formula <- paste(y_value, "~", fixed_formula)
+  } else {
+    formula <- paste(y_value, "~ 1")  # Only intercept if no fixed effects found
+  }
+  
+  # Add random effects: cage_ID nested within lab
+  random_effects <- "(1 | lab/cage_ID)"
+  
+  # Final formula: combine fixed and random effects
+  final_formula <- as.formula(paste(formula, random_effects, sep = " + "))
+  
+  # Return a list with the experiment name and the corresponding formula
+  return(final_formula)
+}
+```
+
+```{r}
+# Function "fit_lme_model" to create and fit a linear mixed-effects model using lme4, uses function "create_lme_formula" to get the proper formula
+
+fit_lme_model <- function(expt_list, expt_name, y_value) {
+  
+  # Get the formula using the existing create_lme_formula function
+  formula_info <- create_lme_formula(expt_list, expt_name, y_value)
+  
+  # Retrieve the data for the specified experiment
+  df <- expt_list[[expt_name]]
+  
+  # Fit the linear mixed-effects model using lme4::lmer
+  model <- lme4::lmer(formula_info, data = df)
+  
+  # Return the fitted model
+  return(model)
+}
+```
+
+## HTR
+### y = head twitch count
+
+```{r}
+# multivariate
+htr <- fit_lme_model(processed_splits, "HTR", "htr_total")
+
+# random effects
+htr_null <- lme4::lmer(htr_total ~ 1 + (1 | lab/cage_ID), processed_splits$HTR)
+
+# Rx only
+htr_Rx <- lme4::lmer(htr_total ~ treatment + (1 | lab/cage_ID), processed_splits$HTR)
+```
+
+## aOFT
+### y = % time in center
+
+```{r}
+# multivariate
+aOFT_percent_center <- fit_lme_model(processed_splits, "aOFT", "percent_center")
+# random effects
+aOFT_percent_center_null <- lme4::lmer(percent_center ~ 1 + (1 | lab/cage_ID), processed_splits$aOFT)
+# Rx only
+aOFT_percent_center_Rx <- lme4::lmer(percent_center ~ treatment + (1 | lab/cage_ID), processed_splits$aOFT)
+```
+
+### y = velocity (cm/s)
+
+```{r}
+# multivariate
+aOFT_velocity <- fit_lme_model(processed_splits, "aOFT", "velocity")
+# random effects
+aOFT_velocity_null <- lme4::lmer(velocity ~ 1 + (1 | lab/cage_ID), processed_splits$aOFT)
+# Rx only
+aOFT_velocity_Rx <- lme4::lmer(velocity ~ treatment + (1 | lab/cage_ID), processed_splits$aOFT)
+```
+
+## pOFT
+### y = % time in center
+
+```{r}
+# multivariate
+pOFT_percent_center <- fit_lme_model(processed_splits, "pOFT", "percent_center")
+# random effects
+pOFT_percent_center_null <- lme4::lmer(percent_center ~ 1 + (1 | lab/cage_ID), processed_splits$pOFT)
+# Rx only
+pOFT_percent_center_Rx <- lme4::lmer(percent_center ~ treatment + (1 | lab/cage_ID), processed_splits$pOFT)
+```
+
+### y = velocity (cm/s)
+
+```{r}
+# multivariate
+pOFT_velocity <- fit_lme_model(processed_splits, "pOFT", "velocity")
+# random effects
+pOFT_velocity_null <- lme4::lmer(velocity ~ 1 + (1 | lab/cage_ID), processed_splits$pOFT)
+# Rx only
+pOFT_velocity_Rx <- lme4::lmer(velocity ~ treatment + (1 | lab/cage_ID), processed_splits$pOFT)
+```
+
+## aNOE
+### y = average time spent exploring novel object
+
+```{r}
+# multivariate
+aNOE_avg_time_exploring <- fit_lme_model(processed_splits, "aNOE", "avg_time_exploring")
+# random effects
+aNOE_avg_time_exploring_null <- lme4::lmer(avg_time_exploring ~ 1 + (1 | lab/cage_ID), processed_splits$aNOE) 
+# Rx only
+aNOE_avg_time_exploring_Rx <- lme4::lmer(avg_time_exploring ~ treatment + (1 | lab/cage_ID), processed_splits$aNOE)
+```
+
+## pNOE
+### y = average time spent exploring novel object
+
+```{r}
+# multivariate
+pNOE_avg_time_exploring <- fit_lme_model(processed_splits, "pNOE", "avg_time_exploring")
+# random effects
+pNOE_avg_time_exploring_null <- lme4::lmer(avg_time_exploring ~ 1 + (1 | lab/cage_ID), processed_splits$pNOE) 
+# Rx only
+pNOE_avg_time_exploring_Rx <- lme4::lmer(avg_time_exploring ~ treatment + (1 | lab/cage_ID), processed_splits$pNOE)
+```
+
+## aEPM
+### y = % time in open arms
+
+```{r}
+# multivariate
+aEPM_percent_open <- fit_lme_model(processed_splits, "aEPM", "percent_open")
+# random effects
+aEPM_percent_open_null <- lme4::lmer(percent_open ~ 1 + (1 | lab/cage_ID), processed_splits$aEPM) 
+# Rx only
+aEPM_percent_open_Rx <- lme4::lmer(percent_open ~ treatment + (1 | lab/cage_ID), processed_splits$aEPM)
+```
+
+## pEPM
+### y = % time in open arms
+
+```{r}
+# multivariate
+pEPM_percent_open <- fit_lme_model(processed_splits, "pEPM", "percent_open")
+# random effects
+pEPM_percent_open_null <- lme4::lmer(percent_open ~ 1 + (1 | lab/cage_ID), processed_splits$pEPM) 
+# Rx only
+pEPM_percent_open_Rx <- lme4::lmer(percent_open ~ treatment + (1 | lab/cage_ID), processed_splits$pEPM)
+```
+
+## aSIT
+### y = social preference score
+
+```{r}
+# multivariate
+aSIT_social_score <- fit_lme_model(processed_splits, "aSIT", "social_score")
+# random effects
+aSIT_social_score_null <- lme4::lmer(social_score ~ 1 + (1 | lab/cage_ID), processed_splits$aSIT) 
+# Rx only
+aSIT_social_score_Rx <- lme4::lmer(social_score ~ treatment + (1 | lab/cage_ID), processed_splits$aSIT)
+```
+
+## pSIT
+### y = social preference score
+
+```{r}
+# multivariate
+pSIT_social_score <- fit_lme_model(processed_splits, "pSIT", "social_score")
+# random effects
+pSIT_social_score_null <- lme4::lmer(social_score ~ 1 + (1 | lab/cage_ID), processed_splits$pSIT)
+# Rx only
+pSIT_social_score_Rx <- lme4::lmer(social_score ~ treatment + (1 | lab/cage_ID), processed_splits$pSIT)
+```
+
+## rFST
+### y = time spent immobile
+
+```{r}
+# multivariate
+rFST_d3_immobility <- fit_lme_model(processed_splits, "rFST", "d3_immobility")
+# random effects
+rFST_d3_immobility_null <- lme4::lmer(d3_immobility ~ 1 + (1 | lab/cage_ID), processed_splits$rFST)
+# Rx only
+rFST_d3_immobility_Rx <- lme4::lmer(d3_immobility ~ treatment + (1 | lab/cage_ID), processed_splits$rFST)
+```
+
+## rTST
+### y = time spent immobile
+
+```{r}
+# multivariate
+rTST_d3_immobility <- fit_lme_model(processed_splits, "rTST", "d3_immobility")
+# random effects
+rTST_d3_immobility_null <- lme4::lmer(d3_immobility ~ 1 + (1 | lab/cage_ID), processed_splits$rTST)
+# Rx only
+rTST_d3_immobility_Rx <- lme4::lmer(d3_immobility ~ treatment + (1 | lab/cage_ID), processed_splits$rTST)
+```
+
+## pTST
+### y = time spent immobile
+
+```{r}
+# multivariate
+pTST_d1_immobility <- fit_lme_model(processed_splits, "pTST", "d1_immobility")
+# random effects
+pTST_d1_immobility_null <- lme4::lmer(d1_immobility ~ 1 + (1 | lab/cage_ID), processed_splits$pTST)
+# Rx only
+pTST_d1_immobility_Rx <- lme4::lmer(d1_immobility ~ treatment + (1 | lab/cage_ID), processed_splits$pTST)
+```
+
+## sCPP
+### y = social preference score
+
+```{r}
+# multivariate
+sCPP <- fit_lme_model(processed_splits, "sCPP", "social_preference_score")
+# random effects
+sCPP_null <- lme4::lmer(social_preference_score ~ 1 + (1 | lab/cage_ID), processed_splits$sCPP)
+# Rx only
+sCPP_Rx <- lme4::lmer(social_preference_score ~ treatment + (1 | lab/cage_ID), processed_splits$sCPP)
+```
+
+## preFC
+### y = % freezing retrieval
+
+```{r}
+# multivariate
+preFC_retr <- fit_lme_model(processed_splits, "preFC", "percent_freezing_retrieval")
+# random effects
+preFC_retr_null <- lme4::lmer(percent_freezing_retrieval ~ 1 + (1 | lab/cage_ID), processed_splits$preFC)
+# Rx only
+preFC_retr_Rx <- lme4::lmer(percent_freezing_retrieval ~ treatment + (1 | lab/cage_ID), processed_splits$preFC)
+```
+
+### y = % freezing extinction 1
+
+```{r}
+# multivariate
+preFC_ex1 <- fit_lme_model(processed_splits, "preFC", "percent_freezing_ex1")
+# random effects
+preFC_ex1_null <- lme4::lmer(percent_freezing_ex1 ~ 1 + (1 | lab/cage_ID), processed_splits$preFC)
+# Rx only
+preFC_ex1_Rx <- lme4::lmer(percent_freezing_ex1 ~ treatment + (1 | lab/cage_ID), processed_splits$preFC)
+```
+
+### y = % freezing extinction 2
+
+```{r}
+# multivariate
+preFC_ex2 <- fit_lme_model(processed_splits, "preFC", "percent_freezing_ex2")
+# random effects
+preFC_ex2_null <- lme4::lmer(percent_freezing_ex2 ~ 1 + (1 | lab/cage_ID), processed_splits$preFC)
+# Rx only
+preFC_ex2_Rx <- lme4::lmer(percent_freezing_ex2 ~ treatment + (1 | lab/cage_ID), processed_splits$preFC)
+```
+
+## postFC
+### y = % freezing extinction 1
+
+```{r}
+# multivariate
+postFC_ex1 <- fit_lme_model(processed_splits, "postFC", "percent_freezing_ex1")
+# random effects
+postFC_ex1_null <- lme4::lmer(percent_freezing_ex1 ~ 1 + (1 | lab/cage_ID), processed_splits$postFC)
+# Rx only
+postFC_ex1_Rx <- lme4::lmer(percent_freezing_ex1 ~ treatment + (1 | lab/cage_ID), processed_splits$postFC)
+```
+
+### y = % freezing extinction 2
+
+```{r}
+# multivariate
+postFC_ex2 <- fit_lme_model(processed_splits, "postFC", "percent_freezing_ex2")
+# random effects
+postFC_ex2_null <- lme4::lmer(percent_freezing_ex2 ~ 1 + (1 | lab/cage_ID), processed_splits$postFC)
+# Rx only
+postFC_ex2_Rx <- lme4::lmer(percent_freezing_ex2 ~ treatment + (1 | lab/cage_ID), processed_splits$postFC)
+```
+
+# Step 3: Model Statistics
+
+```{r}
+# Create CSV of experiment confidence intervals
+
+# Function to create 95% confidence interval CSV file
+confint95_csv <- function(expt_list, expt_name, y_value) {
+  
+  # Get the model using the existing fit_lme_model function
+  model <- fit_lme_model(expt_list, expt_name, y_value)
+  
+  # Retrieve the confidence interval
+  confint_output <- confint(model, level = 0.95)
+  
+  # Create a dynamic file name using the variable name
+  file_name <- paste0("/media/data01/processed/private_data/behavior/confint_95_", expt_name, "_", y_value, ".csv")
+  
+  # Fit the linear mixed-effects model using lme4::lmer
+  write.csv(confint_output, file =  file_name)
+}
+
+# Function to create 99% confidence interval CSV file
+confint99_csv <- function(expt_list, expt_name, y_value) {
+  
+  # Get the model using the existing fit_lme_model function
+  model <- fit_lme_model(expt_list, expt_name, y_value)
+  
+  # Retrieve the confidence interval
+  confint_output <- confint(model, level = 0.99)
+  
+  # Create a dynamic file name using the variable name
+  file_name <- paste0("/media/data01/processed/private_data/behavior/confint_99_", expt_name, "_", y_value, ".csv")
+  
+  # Fit the linear mixed-effects model using lme4::lmer
+  write.csv(confint_output, file =  file_name)
+}
+
+# Function to create 999% confidence interval CSV file
+confint999_csv <- function(expt_list, expt_name, y_value) {
+  
+  # Get the model using the existing fit_lme_model function
+  model <- fit_lme_model(expt_list, expt_name, y_value)
+  
+  # Retrieve the confidence interval
+  confint_output <- confint(model, level = 0.999)
+  
+  # Create a dynamic file name using the variable name
+  file_name <- paste0("/media/data01/processed/private_data/behavior/confint_999_", expt_name, "_", y_value, ".csv")
+  
+  # Fit the linear mixed-effects model using lme4::lmer
+  write.csv(confint_output, file =  file_name)
+}
+```
+
+## Example w/ HTR 
+```{r}
+# Get 95% confidence interval for coefficients in multivariate model
+# (saves to files)
+confint95_csv(processed_splits, "HTR", "htr_total")
+
+# Get the marginal and conditional R squared
+r.squaredGLMM(htr)
+
+# Get model statistic summary
+summary(htr)
+
+# Get p-value for Rx only model comparing to null model (random effects model)
+anova(htr_Rx, htr_null)
+
+# Calculate ICC from variance components of the random effects model
+summary(htr_null)
+```
+
+# Z-score
+
+```{r}
+# Function "z_score_mice_by_lab" z-scores each lab's data using mean_saline_F and SD_saline_F to z-score the female data, and mean_saline_M and SD_saline_M to z-score the male data
+
+z_score_mice_by_lab <- function(df, y_value) {
+  
+  # Create an empty column for z-scores
+  df$z_score <- NA
+  
+  # Get the unique labs
+  labs <- unique(df$lab)
+  
+  # Loop over each lab to perform the z-scoring for each subset
+  for (lab in labs) {
+    
+    # Subset the data for the current lab
+    lab_data <- df[df$lab == lab, ]
+    
+    # Subset data based on treatment and sex for the current lab
+    male_s_mice <- lab_data[lab_data$treatment == "S" & lab_data$sex == "M", ]
+    female_s_mice <- lab_data[lab_data$treatment == "S" & lab_data$sex == "F", ]
+    
+    # Calculate mean and SD for male and female mice with treatment S in this lab
+    male_s_mean <- mean(male_s_mice[[y_value]], na.rm = TRUE)
+    male_s_sd <- sd(male_s_mice[[y_value]], na.rm = TRUE)
+    
+    female_s_mean <- mean(female_s_mice[[y_value]], na.rm = TRUE)
+    female_s_sd <- sd(female_s_mice[[y_value]], na.rm = TRUE)
+    
+    # Z-score for males in this lab
+    df$z_score[df$lab == lab & df$sex == "M"] <- (df[[y_value]][df$lab == lab & df$sex == "M"] - male_s_mean) / male_s_sd
+    
+    # Z-score for females in this lab
+    df$z_score[df$lab == lab & df$sex == "F"] <- (df[[y_value]][df$lab == lab & df$sex == "F"] - female_s_mean) / female_s_sd
+  }
+  
+  # Return the updated data frame
+  return(df)
+}
+```
+
+## Create df
+```{r}
+## Create z-score df using the function z_score_mice_by_lab
+z_HTR_df <- z_score_mice_by_lab(processed_splits$HTR, "htr_total")
+z_aOFT_df <- z_score_mice_by_lab(processed_splits$aOFT, "percent_center")
+z_aOFTv_df <- z_score_mice_by_lab(processed_splits$aOFT, "velocity")
+z_pOFT_df <- z_score_mice_by_lab(processed_splits$pOFT, "percent_center")
+z_pOFTv_df <- z_score_mice_by_lab(processed_splits$pOFT, "velocity")
+z_aEPM_df <- z_score_mice_by_lab(processed_splits$aEPM, "percent_open")
+z_pEPM_df <- z_score_mice_by_lab(processed_splits$pEPM, "percent_open")
+z_aNOE_df <- z_score_mice_by_lab(processed_splits$aNOE, "avg_time_exploring")
+z_pNOE_df <- z_score_mice_by_lab(processed_splits$pNOE, "avg_time_exploring")
+z_rFST_df <- z_score_mice_by_lab(processed_splits$rFST, "d3_immobility")
+z_rTST_df <- z_score_mice_by_lab(processed_splits$rTST, "d3_immobility")
+z_pTST_df <- z_score_mice_by_lab(processed_splits$pTST, "d1_immobility")
+z_aSIT_df <- z_score_mice_by_lab(processed_splits$aSIT, "social_score")
+z_pSIT_df <- z_score_mice_by_lab(processed_splits$pSIT, "social_score")
+z_sCPP_adult_df <- z_score_mice_by_lab(processed_splits$sCPP, "social_preference_score")
+z_preFC_retr <- z_score_mice_by_lab(processed_splits$preFC, "percent_freezing_retrieval")
+z_preFC_ex1 <- z_score_mice_by_lab(processed_splits$preFC, "percent_freezing_ex1")
+z_preFC_ex2 <- z_score_mice_by_lab(processed_splits$preFC, "percent_freezing_ex2")
+z_postFC_ex1 <- z_score_mice_by_lab(processed_splits$postFC, "percent_freezing_ex1")
+z_postFC_ex2 <- z_score_mice_by_lab(processed_splits$postFC, "percent_freezing_ex2")
+```
+
+## Create models
+
+```{r}
+z_HTR_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_HTR_df)
+z_HTR_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_HTR_df)
+
+z_aOFT_percent_center_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_aOFT_df)
+z_aOFT_percent_center_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_aOFT_df)
+z_aOFTv_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_aOFTv_df)
+z_aOFTv_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_aOFTv_df)
+
+z_pOFT_percent_center_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_pOFT_df)
+z_pOFT_percent_center_null <- lmer(z_score ~1 + (1 | lab/cage_ID), z_pOFT_df)
+z_pOFTv_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_pOFTv_df)
+z_pOFTv_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_pOFTv_df)
+
+z_aEPM_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_aEPM_df)
+z_aEPM_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_aEPM_df)
+
+z_pEPM_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_pEPM_df)
+z_pEPM_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_pEPM_df)
+
+z_aNOE_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_aNOE_df)
+z_aNOE_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_aNOE_df)
+
+z_pNOE_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_pNOE_df)
+z_pNOE_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_pNOE_df)
+
+z_rFST_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_rFST_df)
+z_rFST_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_rFST_df)
+
+z_rTST_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_rTST_df)
+z_rTST_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_rTST_df)
+
+z_pTST_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_pTST_df)
+z_pTST_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_pTST_df)
+
+z_aSIT_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_aSIT_df)
+z_aSIT_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_aSIT_df)
+
+z_pSIT_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_pSIT_df)
+z_pSIT_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_pSIT_df)
+
+z_sCPP_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_sCPP_adult_df)
+z_sCPP_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_sCPP_adult_df)
+
+z_preFC_retr_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_preFC_retr)
+z_preFC_retr_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_preFC_retr)
+
+z_preFC_ex1_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_preFC_ex1)
+z_preFC_ex1_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_preFC_ex1)
+
+z_preFC_ex2_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_preFC_ex2)
+z_preFC_ex2_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_preFC_ex2)
+
+z_postFC_ex1_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_postFC_ex1)
+z_postFC_ex1_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_postFC_ex1)
+
+z_postFC_ex2_Rx <- lmer(z_score ~ treatment + (1 | lab/cage_ID), z_postFC_ex2)
+z_postFC_ex2_null <- lmer(z_score ~ 1 + (1 | lab/cage_ID), z_postFC_ex2)
+```
+## Model statistics, example w/ HTR
+
+```{r}
+# Get the marginal and conditional R squared
+r.squaredGLMM(z_HTR_Rx)
+
+# Get model statistic summary
+summary(z_HTR_Rx)
+
+# Get p-value for Rx only model comparing to null model (random effects model)
+anova(z_HTR_Rx, z_HTR_null)
+
+# Calculate ICC from variance components of the random effects model
+summary(z_HTR_null)
+```
+
+
