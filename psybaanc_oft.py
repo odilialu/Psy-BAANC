@@ -23,6 +23,8 @@ The output data is stored in:
             Two-way ANOVA. If interaction significant, t-test post-hoc comparisons with Sidak's corrections
         - If unequal variances: 
             One-way Kruskal-Wallis. If significant, Dunn's post hoc comparisons with Holms corrections
+    levenes_results_zscored: for the zscored data
+    stats_results_zscored: for the zscored data
     
 The output variables include: 
     'Time_Edges': (%) time an animal spends in the edge
@@ -312,7 +314,7 @@ if zscore:
     data_final_zscored = psy_beh.zscore_dataframe(data_final)
 
 #%% Do statistical tests.
-if stats:
+def get_stats(data_final):
     levenes = psy_stats.levenes_test_dataframe(data_final)
     
     results = [None]*len(column_names)
@@ -336,7 +338,13 @@ if stats:
                 
     stats_results =dict(zip(column_names, results))
     levenes_results = levenes.set_index('Measure').to_dict(orient='index')
+    
+    return levenes_results, stats_results
 
+if stats:
+    levenes_results, stats_results = get_stats(data_final)
+    levenes_results_zscored, stats_results_zscored = get_stats(data_final_zscored)
+    
 #%% Plot animal traces for visualization if you like. 
 if plot_traces:
     for video_idx, video_path in enumerate(paths_vid):
