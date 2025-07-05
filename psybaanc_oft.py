@@ -23,8 +23,6 @@ The output data is stored in:
             Two-way ANOVA. If interaction significant, t-test post-hoc comparisons with Sidak's corrections
         - If unequal variances: 
             One-way Kruskal-Wallis. If significant, Dunn's post hoc comparisons with Holms corrections
-    levenes_results_zscored: for the zscored data
-    stats_results_zscored: for the zscored data
     
 The output variables include: 
     'Time_Edges': (%) time an animal spends in the edge
@@ -50,7 +48,7 @@ import psybaanc_behavior as psy_beh
 import psybaanc_stats as psy_stats
 
 #%% Variables to change
-FOLDER_PATH = r"Y:\PsyBAANC\paperExperiments\OFT_EPM\OFT_all" # path to the folder with all video and coordinate data
+FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/OFT_EPM/OFT_all" # path to the folder with all video and coordinate data
 VIDEO_TYPE = "avi" # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv" # options: "csv", "xlsx"
 START_SEC = 0 # the time in seconds that you wish to begin analysis.
@@ -60,8 +58,8 @@ INTERVAL_SEC = 5*60 # for time-binned measures, what is the bin interval, in sec
 LENGTH_CM = 50 # true size of your open field box in cm
 N_BOXES = 25 # How many squares do you want to divide OF into? number must be square of an integer. PsyBAANC keep at 25. 
 
-X_COORDINATE_INDEX = 25 # Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
-Y_COORDINATE_INDEX = 26 # Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
+X_COORDINATE_INDEX = 25# Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
+Y_COORDINATE_INDEX = 26# Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
 ROW_INDEX = 4 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
 DATA_DLC = True # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
 
@@ -70,7 +68,7 @@ treatment_key = ["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5 + ["S"
 
 zscore = True # Do you want to get z-scored data? True or False
 stats = True # Do you want to return stats? True or False
-plot_traces = False # Do you want to plot animal traces? True or False
+plot_traces = True # Do you want to plot animal traces? True or False
 
 # matplotlib plotting parameters
 plt.rcParams['figure.dpi'] = 600
@@ -277,17 +275,12 @@ data_dict = {
     'Animal_ID': paths_vid,
     'Sex': sex_key,
     'Treatment': treatment_key,
-    'Time_Edges': time_in_edges,
     'Time_Center': time_in_center,
     'Time_Corners': time_in_corners,
     'Distance_in_center': distance_in_center,
-    'Distance': distance_travelled,
     'Velocity': velocity,
     'Time_moving': time_moving,
-    'Velocity_while_moving': velocity_while_moving,
-    'Time_running': time_running,
-    'Time_walking': time_walking,
-    'Time_freezing': time_freezing
+    'Velocity_while_moving': velocity_while_moving
     }
 
 data_final = pd.DataFrame(data_dict)
@@ -301,10 +294,9 @@ def make_binned_data_df(binned_data):
     return df_final
 
 binned_data_df = []
-for binned_data in [time_in_edges_bins, time_in_center_bins, time_in_corners_bins,
-                    distance_in_center_bins, distance_travelled_bins, velocity_bins,
-                    time_moving_bins, velocity_while_moving_bins,
-                    time_running_bins, time_walking_bins, time_freezing_bins]:
+for binned_data in [time_in_center_bins, time_in_corners_bins,
+                    distance_in_center_bins, velocity_bins,
+                    time_moving_bins, velocity_while_moving_bins]:
     binned_data_df.append(make_binned_data_df(binned_data))
 
 data_final_binned = dict(zip(column_names, binned_data_df))
@@ -316,15 +308,16 @@ if zscore:
 #%% Do statistical tests.
 def get_stats(data_final):
     levenes = psy_stats.levenes_test_dataframe(data_final)
+    print(psy_stats.sample_size(data_final))
     
     results = [None]*len(column_names)
     for col_idx, col_name in enumerate(column_names):
         if levenes[levenes["Measure"]==col_name]["P_value"].tolist()[0] < 0.05:
-            kruskal_results = np.array(psy_stats.kruskal_wallis(data_final, col_name)).T
+            kruskal_results = np.array(psy_stats.kruskal_wallis(data_final, col_name)).reshape(1, -1)
             keys = ["h_stat", "p-value"]
-            if kruskal_results[1] < 0.05:
-                pvals_holm = psy_stats.dunns(data_final, col_name)
-                kruskal_results = np.concatenate((kruskal_results, pvals_holm)).reshape(1, -1)
+            if kruskal_results[0, 1] < 0.05:
+                pvals_holm = psy_stats.dunns(data_final, col_name).reshape(1, -1)
+                kruskal_results = np.concatenate((kruskal_results, pvals_holm), axis=1)
                 keys = ["h-stat", "p-value", "m,sal v. m,psi", "f,sal v. f,psi", "m,sal v. f,sal", "m,psi v. f,psi"]
                 
             results[col_idx] = pd.DataFrame(data = kruskal_results, columns = keys)
@@ -343,7 +336,6 @@ def get_stats(data_final):
 
 if stats:
     levenes_results, stats_results = get_stats(data_final)
-    levenes_results_zscored, stats_results_zscored = get_stats(data_final_zscored)
     
 #%% Plot animal traces for visualization if you like. 
 if plot_traces:
