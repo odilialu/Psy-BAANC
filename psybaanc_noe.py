@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jun 30 09:41:34 2025
+Created on Sat Jul  5 14:17:43 2025
+
 @author: olu
 
-OFT Analysis 
+NOE Analysis: 
 Instructions:
     1. Put all video and coordinate files from a single experiment in a folder.
     2. Adjust the variables in the "Variables to change" section to match your settings.
-    3. Run the script.
+    3. Run the script. Follow command-line instructions when prompted. 
     4. Update Supplementary table 1 [meta data sheet] with your raw data.
     5. Update Supplementary table 2 [stats table] with the statistics.
     6. Update your Prism files with the raw data. Ensure figure format is that of the paper.
@@ -16,7 +17,6 @@ Instructions:
 The output data is stored in: 
     data_final: all summary measures
     data_final_zscored: all summary measures zscored to sal conditions
-    data_final_binned: all measures reported in 5 minute intervals. 
     levenes_results: statistical results from levene's test for homogeneity of variances
     stats_results: statistical results for every measure. 
         - If equal variances: 
@@ -25,18 +25,16 @@ The output data is stored in:
             One-way Kruskal-Wallis. If significant, Dunn's post hoc comparisons with Holms corrections
     
 The output variables include: 
-    'Time_Edges': (%) time an animal spends in the edge
-    'Time_Center': (%) time an animal spends in the center
-    'Time_Corners': (%) time an animal spends in the corners
-    'Distance_in_center': (cm) distance travelled in the center
+    'Avg_time': (s) sum of exploration time of both objects
+    'Latency_explore': (s) time it took for mouse to first explore an object
+    'Object_one_time': (s) exploration time of object 1
+    'Object_two_time': (s) exploration time of object 
+    'Proportion_time': (fraction) = object_one_time/object_two_time
+    'Time_edges': (%) Time animal spent in the edges
+    'Time_corners': (%) Time animal spent in the corners
     'Distance': (cm) distance travelled in open field
     'Velocity': (cm/s) average velocity in open field
-    'Time_moving': (%) time an animal spends moving (defined as movement >= 5 cm/s)
-    'Velocity_while_moving': (cm/s) average velocity during time points considered as moving
-    'Time_running': (%) time an animal spends running (defined as movement > 20 cm/s)
-    'Time_walking': (%) time an animal spends walking (defined as movement >= 5 or < 20 cm/s)
-    'Time_freezing': (%) time an animal spends freezing (defined as movement < 5 cm/s)
-    
+
 """
 
 #%% Import packages
@@ -48,24 +46,27 @@ import psybaanc_behavior as psy_beh
 import psybaanc_stats as psy_stats
 
 #%% Variables to change
-FOLDER_PATH = r"C:/Users/olu/Downloads/alex test etho" # path to the folder with all video and coordinate data
+FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/NOEPers/all" # path to the folder with all video and coordinate data
 VIDEO_TYPE = "mp4" # options: "mp4", "avi", others also likely OK.
-COORDINATE_FILE_TYPE = "xlsx" # options: "csv", "xlsx"
+COORDINATE_FILE_TYPE = "csv" # options: "csv", "xlsx"
 START_SEC = 0 # the time in seconds that you wish to begin analysis.
-END_SEC = 30*60 # the time in seconds that you wish to end analysis. 
-INTERVAL_SEC = 5*60 # for time-binned measures, what is the bin interval, in seconds? 
+END_SEC = 10*60 # the time in seconds that you wish to end analysis. 
 
 LENGTH_CM = 50 # true size of your open field box in cm
 N_BOXES = 25 # How many squares do you want to divide OF into? number must be square of an integer. PsyBAANC keep at 25. 
 
-X_COORDINATE_INDEX = 2# Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
-Y_COORDINATE_INDEX = 3# Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
-ROW_INDEX = 39 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
-DATA_DLC = False # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
+X_NOSE_COORDINATE_INDEX = 1
+Y_NOSE_COORDINATE_INDEX = 2
+X_BODY_COORDINATE_INDEX = 16# Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
+Y_BODY_COORDINATE_INDEX = 17# Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
+ROW_INDEX = 4 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
+DATA_DLC = True # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
 COORDINATES_CM = False # Are your coordinates in centimeters? (And not pixels)
 
-sex_key = ["M"]*20 + ["F"]*20 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
-treatment_key = ["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["P"]*5 #Create a list indicating the treatment of the animals, i.e., ["S", "S", "P"]
+OBJECT_ONE_SHAPE = "circle" # options: "circle", "ellipse", "rectangle", "polygon"
+OBJECT_TWO_SHAPE = "circle" # options: "circle", "ellipse", "rectangle", "polygon"
+sex_key = ["M"]*19 + ["F"]*20 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
+treatment_key = ["P"]*4 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5
 
 zscore = True # Do you want to get z-scored data? True or False
 stats = True # Do you want to return stats? True or False
@@ -89,21 +90,29 @@ for video_idx, video_path in enumerate(paths_vid):
 #%% Read in all of the coordinate data.
 print("reading coordinate data. please be patient")
 body_coords = [None]*len(paths_vid)
+nose_coords = [None]*len(paths_vid)
 cm_to_pixels = np.empty(len(paths_vid))
 for file_idx, coordinate_file in enumerate(paths_coordinates):
     if DATA_DLC == True: # use likelihood estimates to do linear interpolation on uncertain coordinates. 
         coordinates = pd.read_csv(coordinate_file, skiprows=list(range(0, ROW_INDEX-2)))
-        body_coords[file_idx] = psy_beh.get_body_parts(coordinates, body_part_idx_x = X_COORDINATE_INDEX, likelihood=0.6)
-
+        body_coords[file_idx] = psy_beh.get_body_parts(coordinates, body_part_idx_x = X_BODY_COORDINATE_INDEX, likelihood=0.6)
+        nose_coords[file_idx] = psy_beh.get_body_parts(coordinates, body_part_idx_x = X_NOSE_COORDINATE_INDEX, likelihood=0.6)
+        
     else: # otherwise read in coordinates as is. 
         if COORDINATE_FILE_TYPE == "xlsx":
             body_coords[file_idx] = pd.read_excel(coordinate_file, 
-                                                  usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
+                                                  usecols=[X_BODY_COORDINATE_INDEX,Y_BODY_COORDINATE_INDEX], 
+                                                  skiprows=list(range(0,(ROW_INDEX-2))))
+            nose_coords[file_idx] = pd.read_excel(coordinate_file, 
+                                                  usecols=[X_NOSE_COORDINATE_INDEX,Y_NOSE_COORDINATE_INDEX], 
                                                   skiprows=list(range(0,(ROW_INDEX-2))))
         elif COORDINATE_FILE_TYPE == "csv":
             body_coords[file_idx] = pd.read_csv(coordinate_file, 
-                                                usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
+                                                usecols=[X_BODY_COORDINATE_INDEX,Y_BODY_COORDINATE_INDEX], 
                                                 skiprows=list(range(0,(ROW_INDEX-2))))
+            nose_coords[file_idx] = pd.read_csv(coordinate_file, 
+                                                  usecols=[X_NOSE_COORDINATE_INDEX,Y_NOSE_COORDINATE_INDEX], 
+                                                  skiprows=list(range(0,(ROW_INDEX-2))))
             
         body_coords[file_idx] = body_coords[0].to_numpy().astype(float)
         
@@ -113,6 +122,11 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
 
 print("done reading coordinate data")
 
+#%% Calibrate pixels to cm
+cm_to_pixels = np.empty(len(paths_vid))
+for video_idx, video_path in enumerate(paths_vid):
+    cm_to_pixels[video_idx] = psy_beh.calibrate_pixels_to_cm(video_path, real_world_cm=LENGTH_CM, frame_number=0)
+
 #%% Define all relevant ROIs. 
 # Preallocate lists. 
 open_field_base = [None]*(len(paths_vid))
@@ -120,17 +134,72 @@ edge_rois = [None]*(len(paths_vid))
 center_rois = [None]*(len(paths_vid))
 corner_rois = [None]*(len(paths_vid))
 
+object_one = [None]*len(paths_vid)
+object_two = [None]*len(paths_vid)
+object_one_roi = [None]*len(paths_vid)
+object_two_roi = [None]*len(paths_vid)
+
 # First, loop through all the videos and draw a rectangle that defines the base of the open field if you haven't already. 
 # Function saves the ROI tuple into a folder named roi in your video path so you only define it for each video once.
 # If you want to re-define the ROI, you must delete the ROI pickle that is saved in the folder.
-print("If not already done, draw rectangle ROI to define the base of the open field. Hit enter. Repeat for each video.")
+print("If not already done, for each video, draw ROIs to define the left object, then the right object.")
 for video_idx, video_file in enumerate(paths_vid):
-    if plot_traces:
-        open_field_base[video_idx] = psy_beh.get_roi_from_frame(video_file, "roi", body_coords[video_idx])
-    else:
-        open_field_base[video_idx] = psy_beh.get_roi_from_frame(video_file, "roi")
+    open_field_base[video_idx] = psy_beh.get_roi_from_frame(video_file, "open_field_base", coordinates = body_coords[video_idx])
 
-# Then, divide the open field base into N_BOXES number of equal portions. 
+    object_one[video_idx] = psy_beh.get_roi_flexible(video_file, "object_one", shape=OBJECT_ONE_SHAPE)
+    object_two[video_idx] = psy_beh.get_roi_flexible(video_file, "object_two", shape=OBJECT_TWO_SHAPE)
+    object_one_roi[video_idx] = psy_beh.resize_mask_by_cm(object_one[video_idx], cm_offset=3, cm_per_pixel = cm_to_pixels[video_idx])
+    object_two_roi[video_idx] = psy_beh.resize_mask_by_cm(object_two[video_idx], cm_offset=3, cm_per_pixel = cm_to_pixels[video_idx])
+
+    
+#%%
+# Object exploration analysis
+# Exploration is defined as: 
+# - nose within 3 cm of object, body is not within object mask. (animal cannot be sitting on object)
+# - animal must also be looking at object. 
+def get_exploration_metrics(object_one_roi, object_one):
+    object_one_time = np.empty(len(paths_vid))
+    object_one_latency = np.empty(len(paths_vid))
+    object_one_visits = np.empty(len(paths_vid))
+    for video_idx in range(len(paths_vid)):
+        START_FRAME = START_SEC*FRAMERATE[video_idx]
+        END_FRAME = END_SEC*FRAMERATE[video_idx]
+        object_one_nose_frames = psy_beh.get_timepoints_in_mask(nose_coords[video_idx], object_one_roi[video_idx])
+        object_one_body_frames = psy_beh.get_timepoints_in_mask(body_coords[video_idx], object_one[video_idx])
+        common_frames = np.intersect1d(object_one_nose_frames, object_one_body_frames)
+        object_one_exploration = np.setdiff1d(object_one_nose_frames, common_frames)
+        
+        # Animal must also be looking towards the object. 
+        M = cv2.moments(object_one[video_idx])
+        cx = M["m10"] / M["m00"]
+        cy = M["m01"] / M["m00"]
+        object_coord = np.array([cx, cy]).reshape(1, 2)
+        time_looking_object_one = psy_beh.timepoints_looking_at_object(nose_coords[video_idx], body_coords[video_idx], object_coord, angle_thresh_deg=30)
+        
+        object_one_frames = np.intersect1d(object_one_exploration, time_looking_object_one)
+        object_one_frames = object_one_frames[(object_one_frames>=START_FRAME) & (object_one_frames<=END_FRAME)] # filter to only include analysis time of interest
+        
+        object_one_time[video_idx] = len(object_one_frames)/FRAMERATE[video_idx]
+        
+        object_one_frames_visits = psy_beh.split_into_visits(object_one_frames, min_length = FRAMERATE[video_idx]/6)
+        object_one_visits[video_idx] = len(object_one_frames_visits)
+        if object_one_visits[video_idx] > 0:
+            object_one_latency[video_idx] = object_one_frames_visits[0][0]/FRAMERATE[video_idx]
+        else:
+            object_one_latency[video_idx] = END_SEC-START_SEC
+        
+    return object_one_time, object_one_latency, object_one_visits
+
+object_one_time, object_one_latency, object_one_visits = get_exploration_metrics(object_one_roi, object_one)
+object_two_time, object_two_latency, object_two_visits = get_exploration_metrics(object_two_roi, object_two)
+    
+total_time = object_one_time + object_two_time
+average_time = total_time/2
+total_visits = object_one_visits + object_two_visits
+latency_exploration = np.min(np.vstack((object_one_latency, object_two_latency)).T, axis=1)
+
+#%% Anxiety-psy_behaviors analysis
+# divide the open field base into N_BOXES number of equal portions. 
 # From the boxes, define edge, center, and corner ROIs.
 for video_idx, video_file in enumerate(paths_vid):
     open_field_width = open_field_base[video_idx][1] - open_field_base[video_idx][0] # x_max - x_min
@@ -165,8 +234,7 @@ for video_idx, video_file in enumerate(paths_vid):
     # define corner rois. 
     corner_roi_idxs = [0, n_rows-1, N_BOXES-n_rows, N_BOXES-1]
     corner_rois[video_idx] = [sub_rois[index] for index in corner_roi_idxs]
-    
-#%% Anxiety-psy_behaviors analysis
+
 # Function to define frames that animal is in various ROIs. 
 START_FRAME = (START_SEC*FRAMERATE).astype(int)
 END_FRAME = (END_SEC*FRAMERATE).astype(int)
@@ -187,50 +255,17 @@ def timestamps_in_roi(roi_type, percent_time=True):
             time_in_roi[video_idx] = len(frames_in_roi[video_idx])/FRAMERATE[video_idx] # in seconds.
             if percent_time:
                 time_in_roi[video_idx] = time_in_roi[video_idx]/(END_SEC-START_SEC)*100
-            
+
     return frames_in_roi, time_in_roi
 
-# main analysis 
+# main analysis
 frames_in_edges, time_in_edges = timestamps_in_roi(edge_rois)
-frames_in_center, time_in_center = timestamps_in_roi(center_rois)
 frames_in_corner, time_in_corners = timestamps_in_roi(corner_rois)
-
-# Get data in interval chunks 
-n_intervals = int(round((END_SEC-START_SEC)/INTERVAL_SEC))
-time_in_edges_bins = np.empty((len(paths_vid), n_intervals))
-time_in_corners_bins = np.empty((len(paths_vid), n_intervals))
-time_in_center_bins = np.empty((len(paths_vid), n_intervals))
-for video_idx in range(len(paths_vid)):
-    i = 0
-    for sec_start in range(START_SEC, END_SEC, INTERVAL_SEC):
-        sec_end = sec_start + INTERVAL_SEC - 1
-        frame_start = int(round(sec_start*FRAMERATE[video_idx]))
-        frame_end = int(round(sec_end*FRAMERATE[video_idx] + (FRAMERATE[video_idx]-1)))
-        
-        time_in_edges_bins[video_idx, i] = np.sum((frames_in_edges[video_idx]>=frame_start) & (frames_in_edges[video_idx]<=frame_end))/FRAMERATE[video_idx]/INTERVAL_SEC*100
-        time_in_corners_bins[video_idx, i] = np.sum((frames_in_corner[video_idx]>=frame_start) & (frames_in_corner[video_idx]<=frame_end))/FRAMERATE[video_idx]/INTERVAL_SEC*100
-        time_in_center_bins[video_idx, i] = np.sum((frames_in_center[video_idx]>=frame_start) & (frames_in_center[video_idx]<=frame_end))/FRAMERATE[video_idx]/INTERVAL_SEC*100
-        i = i+1
         
 #%% Locomotor measures
 # Preallocate variables. 
 distance_travelled = np.empty(len(paths_vid))
 velocity = np.empty(len(paths_vid))
-distance_in_center = np.empty(len(paths_vid))
-time_moving = np.empty(len(paths_vid))
-time_running = np.empty(len(paths_vid))
-time_walking = np.empty(len(paths_vid))
-time_freezing = np.empty(len(paths_vid))
-velocity_while_moving = np.empty(len(paths_vid))
-
-distance_travelled_bins = np.empty((len(paths_vid), n_intervals))
-velocity_bins = np.empty((len(paths_vid), n_intervals))
-distance_in_center_bins = np.empty((len(paths_vid), n_intervals))
-time_moving_bins = np.empty((len(paths_vid), n_intervals))
-time_running_bins = np.empty((len(paths_vid), n_intervals))
-time_walking_bins = np.empty((len(paths_vid), n_intervals))
-time_freezing_bins = np.empty((len(paths_vid), n_intervals))
-velocity_while_moving_bins = np.empty((len(paths_vid), n_intervals))
 
 for video_idx in range(len(paths_vid)):
     # get distance array: distance travelled per frame. 
@@ -250,66 +285,26 @@ for video_idx in range(len(paths_vid)):
     # Summary locomotion metrics
     distance_travelled[video_idx] = sum(distance_array)
     velocity[video_idx] = distance_travelled[video_idx]/(END_SEC-START_SEC)
-    distance_in_center[video_idx] = sum(distance_array[frames_in_center[video_idx]-1])
-    
-    # Fine grained movement data
-    n_seconds = END_SEC - START_SEC
-    distance_per_second = distance_array.reshape(n_seconds, int(FRAMERATE[video_idx])).sum(axis=1)
-    time_moving[video_idx] = sum(distance_per_second>=5)/n_seconds*100
-    time_running[video_idx] = sum(distance_per_second>20)/n_seconds*100
-    time_walking[video_idx] = time_moving[video_idx] - time_running[video_idx]
-    time_freezing[video_idx] = sum(distance_per_second<5)/n_seconds*100
-    velocity_while_moving[video_idx] = np.mean(distance_per_second[distance_per_second>=5])
-    
-    # Get all measures in interval chunks
-    i = 0
-    for sec_start in range(START_SEC, END_SEC, INTERVAL_SEC):
-        sec_end = sec_start + INTERVAL_SEC - 1
-        frame_start = int(round(sec_start*FRAMERATE[video_idx]))
-        frame_end = int(round(sec_end*FRAMERATE[video_idx] + (FRAMERATE[video_idx]-1)))
-
-        distance_travelled_bins[video_idx, i] = np.sum(distance_array[frame_start:frame_end+1])
-        velocity_bins[video_idx, i] = distance_travelled_bins[video_idx, i]/(INTERVAL_SEC)
-        frames_in_center_bin = (frames_in_center[video_idx][(frames_in_center[video_idx] >=frame_start) & (frames_in_center[video_idx] <=frame_end)])-1
-        distance_in_center_bins[video_idx, i] = sum(distance_array[frames_in_center_bin])
-        time_moving_bins[video_idx, i] = sum(distance_per_second[sec_start:sec_end]>=5)/INTERVAL_SEC*100
-        time_running_bins[video_idx, i] = sum(distance_per_second[sec_start:sec_end]>20)/INTERVAL_SEC*100
-        time_walking_bins[video_idx, i] = time_moving_bins[video_idx, i] - time_running_bins[video_idx, i]
-        time_freezing_bins[video_idx, i] = sum(distance_per_second[sec_start:sec_end]<5)/INTERVAL_SEC*100
-        velocity_while_moving_bins[video_idx, i] = np.mean(distance_per_second[sec_start:sec_end][distance_per_second[sec_start:sec_end]>=5])
-        i = i+1
         
 #%% Create data dictionary for summary data. 
 data_dict = {
     'Animal_ID': paths_vid,
     'Sex': sex_key,
     'Treatment': treatment_key,
-    'Time_Center': time_in_center,
+    'Avg_time': average_time,
+    'Latency_explore': latency_exploration,
+    'Object_one_time': object_one_time,
+    'Object_two_time': object_two_time,
+    'Proportion_time': object_one_time/object_two_time,
+    'Time_Edges': time_in_edges,
     'Time_Corners': time_in_corners,
-    'Distance_in_center': distance_in_center,
-    'Velocity': velocity,
-    'Time_moving': time_moving,
-    'Velocity_while_moving': velocity_while_moving
+    'Distance': distance_travelled,
+    'Velocity': velocity
     }
 
 data_final = pd.DataFrame(data_dict)
 column_names = data_final.columns[3:].tolist()
 
-#%% Make data dictionary for binned data 
-animal_info = pd.DataFrame({"Animal_ID": paths_vid, "Sex": sex_key, "Treatment": treatment_key})
-def make_binned_data_df(binned_data):
-    df = pd.DataFrame(binned_data)
-    df_final = pd.concat([animal_info, df], axis=1)
-    return df_final
-
-binned_data_df = []
-for binned_data in [time_in_center_bins, time_in_corners_bins,
-                    distance_in_center_bins, velocity_bins,
-                    time_moving_bins, velocity_while_moving_bins]:
-    binned_data_df.append(make_binned_data_df(binned_data))
-
-data_final_binned = dict(zip(column_names, binned_data_df))
-    
 #%% Z-scored data of summary data
 if zscore:
     data_final_zscored = psy_beh.zscore_dataframe(data_final)

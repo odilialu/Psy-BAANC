@@ -14,6 +14,7 @@ import pickle
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from shapely.geometry import Polygon
 
 # Global drawing variables
 drawing = False
@@ -85,6 +86,7 @@ def get_roi_from_frame(video_file_path, roi_name, coordinates = None):
                 cv2.line(frame, pt1, pt2, color=(0, 255, 0), thickness=1)  # green line
 
         # Select ROI manually
+        print("Draw " + roi_name + " for " + video_file_path)
         roi = cv2.selectROI("Select ROI", frame, fromCenter=False, showCrosshair=True)
         cv2.destroyAllWindows()  # Close the window after selection
 
@@ -151,7 +153,8 @@ def get_body_parts(data_dlc, body_part_idx_x = 13, likelihood=0.6):
     df['x'] = np.where(df['likelihood']<=likelihood, np.nan, df['x'])
     df['y'] = np.where(df['likelihood']<=likelihood, np.nan, df['y'])
 
-    df = df.interpolate().to_numpy()[:, 0:2]
+    df = df.interpolate()
+    df = df.bfill().to_numpy()[:, 0:2]
 
     return df
 
@@ -327,8 +330,8 @@ def get_roi_flexible(video_file_path, roi_name, shape='rectangle', coordinates=N
                 pt1 = tuple(coordinates[i - 1].astype(int))
                 pt2 = tuple(coordinates[i].astype(int))
                 cv2.line(frame, pt1, pt2, color=(0, 255, 0), thickness=1)  # green line
-
-        print(f"Draw {shape.upper()} ROI for {roi_name}. Left-click to define points of polygon, right click to close polygon and move onto next video.")
+        print("Defining ROI for " + video_file_path)
+        print(f"Draw {shape.upper()} ROI for {roi_name}. For polygon, left-click to define points of polygon, right click to close polygon and move onto next video. For all other shapes, press and hold to draw shape, release to confirm.")
     
         roi_type = shape
         temp_img = frame.copy()
@@ -479,3 +482,80 @@ def calibrate_pixels_to_cm(video_path, real_world_cm, frame_number=0):
             pickle.dump(cm_per_pixel, file)
 
     return cm_per_pixel
+
+#%%
+def resize_mask_by_cm(mask, cm_offset, cm_per_pixel):
+    """
+    Resizes a binary mask by a given cm offset.
+    Positive = expand, negative = shrink.
+    """
+    pixel_offset = cm_offset / cm_per_pixel
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    resized_mask = np.zeros_like(mask, dtype=np.uint8)
+
+    for cnt in contours:
+        if cnt.shape[0] < 3:
+            continue  # skip degenerate contours
+
+        poly = Polygon(cnt.squeeze())
+        if not poly.is_valid or poly.is_empty:
+            continue
+
+        poly_resized = poly.buffer(pixel_offset)
+        if poly_resized.is_empty:
+            continue
+
+        # handle both Polygon and MultiPolygon
+        polys = [poly_resized] if poly_resized.geom_type == 'Polygon' else list(poly_resized)
+
+        for p in polys:
+            if not p.is_valid or p.is_empty:
+                continue
+            coords = np.array(p.exterior.coords).round().astype(np.int32)
+            cv2.fillPoly(resized_mask, [coords], 1)
+
+    return resized_mask.astype(bool)
+
+#%%
+def timepoints_looking_at_object(nose_coordinates, body_coordinates, object_coordinates, angle_thresh_deg=30):
+    """
+    Returns the indices (timepoints) when the animal is looking at the object.
+    Coordinates should be 1D arrays of the same length.
+    """
+    x_body = body_coordinates[:, 0]
+    y_body = body_coordinates[:, 1]
+    
+    x_nose = nose_coordinates[:, 0]
+    y_nose = nose_coordinates[:, 1]
+    
+    x_obj = object_coordinates[:, 0]
+    y_obj = object_coordinates[:, 1]
+    
+    # Vectors: head direction and object direction
+    head_vec = np.stack([x_nose - x_body, y_nose - y_body], axis=1)
+    obj_vec = np.stack([x_obj - x_body, y_obj - y_body], axis=1)
+
+    # Normalize vectors (avoid div by zero)
+    head_norm = np.linalg.norm(head_vec, axis=1, keepdims=True)
+    obj_norm = np.linalg.norm(obj_vec, axis=1, keepdims=True)
+
+    valid = (head_norm[:, 0] > 0) & (obj_norm[:, 0] > 0)
+    head_unit = np.zeros_like(head_vec)
+    obj_unit = np.zeros_like(obj_vec)
+    head_unit[valid] = head_vec[valid] / head_norm[valid]
+    obj_unit[valid] = obj_vec[valid] / obj_norm[valid]
+
+    # Angle between head direction and object vector
+    cos_sim = np.sum(head_unit * obj_unit, axis=1)
+    cos_sim = np.clip(cos_sim, -1.0, 1.0)
+    angles_deg = np.degrees(np.arccos(cos_sim))
+
+    # Proximity condition: nose closer to object than body
+    dist_nose = np.sqrt((x_nose - x_obj)**2 + (y_nose - y_obj)**2)
+    dist_body = np.sqrt((x_body - x_obj)**2 + (y_body - y_obj)**2)
+    proximity_ok = dist_nose < dist_body
+
+    # Final condition: angle < threshold AND proximity OK AND vectors valid
+    looking_mask = (angles_deg < angle_thresh_deg) & proximity_ok & valid
+    
+    return np.where(looking_mask)[0]

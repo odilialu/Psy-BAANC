@@ -12,7 +12,7 @@ Instructions:
     4. Update Supplementary table 1 [meta data sheet] with your raw data.
     5. Update Supplementary table 2 [stats table] with the statistics.
     6. Update your Prism files with the raw data. Ensure figure format is that of the paper.
-    7. Send prism files back to Odilia. 
+    7. Upload your Prism file to the google drive, and notify Odilia when complete. 
     
 The output data is stored in: 
     data_final: all summary measures
@@ -53,6 +53,7 @@ X_COORDINATE_INDEX = 13 # Index of your x-coordinate column in your coordinates 
 Y_COORDINATE_INDEX = 14 # Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
 ROW_INDEX = 4 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
 DATA_DLC = True # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
+COORDINATES_CM = False # Are your coordinates in centimeters? (And not pixels)
 
 sex_key = ["M"]*27 + ["F"]*30 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
 treatment_key = (["S", "S"] + ["P"]*5 + ["S"]*5 + ["P", "P"] + ["S"]*3 + ["P"]*6 + ["S"]*2 + ["P", "P"]
@@ -80,6 +81,7 @@ for video_idx, video_path in enumerate(paths_vid):
 #%% Read in all of the coordinate data.
 print("reading coordinate data. please be patient")
 body_coords = [None]*len(paths_vid)
+cm_to_pixels = np.empty(len(paths_vid))
 for file_idx, coordinate_file in enumerate(paths_coordinates):
     if DATA_DLC == True: # use likelihood estimates to do linear interpolation on uncertain coordinates. 
         coordinates = pd.read_csv(coordinate_file, skiprows=list(range(0, ROW_INDEX-2)))
@@ -94,6 +96,13 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
             body_coords[file_idx] = pd.read_csv(coordinate_file, 
                                                 usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
                                                 skiprows=list(range(0,(ROW_INDEX-2))))
+            
+        body_coords[file_idx] = body_coords[0].to_numpy().astype(float)
+        
+    if COORDINATES_CM:
+        cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)
+        body_coords[file_idx] = body_coords[file_idx]/cm_to_pixels[file_idx]
+
 print("done reading coordinate data")
 
 #%% Define all relevant ROIs. 
