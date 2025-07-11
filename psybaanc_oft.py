@@ -40,10 +40,12 @@ The output variables include:
 """
 
 #%% Import packages
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
+os.chdir(r"C:/Users/olu/Documents/Analysis/pythonScripts")
 import psybaanc_behavior as psy_beh
 import psybaanc_stats as psy_stats
 
@@ -107,6 +109,8 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
 
         body_coords[file_idx].replace('-', np.nan, inplace=True) 
         body_coords[file_idx] = body_coords[file_idx].interpolate()
+        body_coords[file_idx][body_coords[file_idx].columns[0]] = pd.to_numeric(body_coords[file_idx][body_coords[file_idx].columns[0]], errors='coerce')
+        body_coords[file_idx][body_coords[file_idx].columns[1]] = pd.to_numeric(body_coords[file_idx][body_coords[file_idx].columns[1]], errors='coerce')
         body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
     if COORDINATES_CM:
@@ -177,7 +181,7 @@ def timestamps_in_roi(roi_type, percent_time=True):
     time_in_roi = np.empty(len(paths_vid))
     for video_idx in range(len(paths_vid)):
 
-        timestamps = np.array(list(range(1,len(body_coords[video_idx])+1)))
+        timestamps = np.array(list(range(0,len(body_coords[video_idx]))))
         frames_in_roi_temp = []
         # cycle through all the rois in the roi type
         for roi_no in range(len(roi_type[video_idx])):
