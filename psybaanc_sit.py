@@ -118,7 +118,9 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
                                                   usecols=[X_NOSE_COORDINATE_INDEX,Y_NOSE_COORDINATE_INDEX], 
                                                   skiprows=list(range(0,(ROW_INDEX-2))))
             
-        body_coords[file_idx] = body_coords[0].to_numpy().astype(float)
+        body_coords[file_idx].replace('-', np.nan, inplace=True) 
+        body_coords[file_idx] = body_coords[file_idx].interpolate()
+        body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
     if COORDINATES_CM:
         cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)
@@ -152,6 +154,8 @@ for video_idx, video_file in enumerate(paths_vid):
 
     
 #%%
+START_FRAME = np.round(START_SEC*FRAMERATE).astype(int)
+END_FRAME = np.round(END_SEC*FRAMERATE).astype(int)
 # Object exploration analysis
 # Exploration is defined as: 
 # - nose within 3 cm of cup, body is not within cup mask. (animal cannot be sitting on object)
@@ -161,8 +165,6 @@ def get_exploration_metrics(empty_cup_roi, empty_cup):
     empty_cup_latency = np.empty(len(paths_vid))
     empty_cup_visits = np.empty(len(paths_vid))
     for video_idx in range(len(paths_vid)):
-        START_FRAME = START_SEC*FRAMERATE[video_idx]
-        END_FRAME = END_SEC*FRAMERATE[video_idx]
         empty_cup_nose_frames = psy_beh.get_timepoints_in_mask(nose_coords[video_idx], empty_cup_roi[video_idx])
         empty_cup_body_frames = psy_beh.get_timepoints_in_mask(body_coords[video_idx], empty_cup[video_idx])
         common_frames = np.intersect1d(empty_cup_nose_frames, empty_cup_body_frames)
@@ -176,7 +178,7 @@ def get_exploration_metrics(empty_cup_roi, empty_cup):
         time_looking_empty_cup = psy_beh.timepoints_looking_at_object(nose_coords[video_idx], body_coords[video_idx], object_coord, angle_thresh_deg=30)
         
         empty_cup_frames = np.intersect1d(empty_cup_exploration, time_looking_empty_cup)
-        empty_cup_frames = empty_cup_frames[(empty_cup_frames>=START_FRAME) & (empty_cup_frames<=END_FRAME)] # filter to only include analysis time of interest
+        empty_cup_frames = empty_cup_frames[(empty_cup_frames>=START_FRAME[video_idx]) & (empty_cup_frames<=END_FRAME[video_idx])] # filter to only include analysis time of interest
         
         empty_cup_time[video_idx] = len(empty_cup_frames)/FRAMERATE[video_idx]
         
@@ -210,14 +212,12 @@ distance_social = np.empty(len(paths_vid))
 
 for video_idx, video_path in enumerate(paths_vid):
     timestamps = np.array(list(range(1,len(body_coords[video_idx])+1)))
-    START_FRAME = int(round(START_SEC*FRAMERATE[video_idx]))
-    END_FRAME = int(round(END_SEC*FRAMERATE[video_idx]))
     frames_empty[video_idx] = psy_beh.find_time_in_location(body_coords[video_idx], timestamps, empty_chamber[video_idx])
-    frames_empty[video_idx] = frames_empty[video_idx][(frames_empty[video_idx]>=START_FRAME) & (frames_empty[video_idx] <= END_FRAME)]
+    frames_empty[video_idx] = frames_empty[video_idx][(frames_empty[video_idx]>=START_FRAME[video_idx]) & (frames_empty[video_idx] <= END_FRAME[video_idx])]
     time_empty[video_idx] = len(frames_empty[video_idx])/FRAMERATE[video_idx]
     
     frames_social[video_idx] = psy_beh.find_time_in_location(body_coords[video_idx], timestamps, social_chamber[video_idx])
-    frames_social[video_idx] = frames_social[video_idx][(frames_social[video_idx]>=START_FRAME) & (frames_social[video_idx] <= END_FRAME)]
+    frames_social[video_idx] = frames_social[video_idx][(frames_social[video_idx]>=START_FRAME[video_idx]) & (frames_social[video_idx] <= END_FRAME[video_idx])]
     time_social[video_idx] = len(frames_social[video_idx])/FRAMERATE[video_idx]
     
     time_center[video_idx] = length_experiment - time_empty[video_idx] - time_social[video_idx]
@@ -235,21 +235,19 @@ distance_empty = np.empty(len(paths_vid))
 distance_social = np.empty(len(paths_vid))
 
 for video_idx in range(len(paths_vid)):
-    START_FRAME = int(round(START_SEC*FRAMERATE[video_idx]))
-    END_FRAME = int(round(END_SEC*FRAMERATE[video_idx]))
     # get distance array: distance travelled per frame. 
     diff_array = np.diff(body_coords[video_idx], axis=0)
     diff_array[:, 0] = diff_array[:, 0] * cm_to_pixels[video_idx] # transform x and y differently since they may have different scales. 
     diff_array[:, 1] = diff_array[:, 1] * cm_to_pixels[video_idx]
     distance_array = np.sqrt((diff_array[:, 0]**2) + (diff_array[:, 1]**2))
-    if len(distance_array) < END_FRAME-1:
+    if len(distance_array) < END_FRAME[video_idx]-1:
         print("WARNING:", paths_vid[video_idx], "does not have the full analysis period present. Zero-padding distance array.")
-        distance_array = np.pad(distance_array, (0, END_FRAME - len(distance_array)), mode='constant') # pad distance array with 0s to make divisible by 30. 
+        distance_array = np.pad(distance_array, (0, END_FRAME[video_idx] - len(distance_array)), mode='constant') # pad distance array with 0s to make divisible by 30. 
 
     if len(distance_array) % FRAMERATE[video_idx] != 0:
         distance_array = np.pad(distance_array, (0, int(FRAMERATE[video_idx] - len(distance_array) % FRAMERATE[video_idx])), mode='constant') # pad distance array with 0s to make divisible by 30. 
 
-    distance_array = distance_array[START_FRAME:END_FRAME]
+    distance_array = distance_array[START_FRAME[video_idx]:END_FRAME[video_idx]]
 
     # Summary locomotion metrics
     distance_travelled[video_idx] = sum(distance_array)

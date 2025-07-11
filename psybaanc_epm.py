@@ -97,7 +97,9 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
                                                 usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
                                                 skiprows=list(range(0,(ROW_INDEX-2))))
             
-        body_coords[file_idx] = body_coords[0].to_numpy().astype(float)
+        body_coords[file_idx].replace('-', np.nan, inplace=True) 
+        body_coords[file_idx] = body_coords[file_idx].interpolate()
+        body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
     if COORDINATES_CM:
         cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)

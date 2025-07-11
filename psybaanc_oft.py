@@ -48,21 +48,21 @@ import psybaanc_behavior as psy_beh
 import psybaanc_stats as psy_stats
 
 #%% Variables to change
-FOLDER_PATH = r"C:/Users/olu/Downloads/alex test etho" # path to the folder with all video and coordinate data
+FOLDER_PATH = r"E:/Kheirbek/PSI_OFT_acute/PSI_OFT_acute/videos_rotated" # path to the folder with all video and coordinate data
 VIDEO_TYPE = "mp4" # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "xlsx" # options: "csv", "xlsx"
 START_SEC = 0 # the time in seconds that you wish to begin analysis.
 END_SEC = 30*60 # the time in seconds that you wish to end analysis. 
 INTERVAL_SEC = 5*60 # for time-binned measures, what is the bin interval, in seconds? 
 
-LENGTH_CM = 50 # true size of your open field box in cm
+LENGTH_CM = [40, 42.5]*4 + [40] # list of true size of your open field box in cm, for each video
 N_BOXES = 25 # How many squares do you want to divide OF into? number must be square of an integer. PsyBAANC keep at 25. 
 
 X_COORDINATE_INDEX = 2# Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
 Y_COORDINATE_INDEX = 3# Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
 ROW_INDEX = 39 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
 DATA_DLC = False # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
-COORDINATES_CM = False # Are your coordinates in centimeters? (And not pixels)
+COORDINATES_CM = True # Are your coordinates in centimeters? (And not pixels)
 
 sex_key = ["M"]*20 + ["F"]*20 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
 treatment_key = ["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["P"]*5 #Create a list indicating the treatment of the animals, i.e., ["S", "S", "P"]
@@ -104,11 +104,13 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
             body_coords[file_idx] = pd.read_csv(coordinate_file, 
                                                 usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
                                                 skiprows=list(range(0,(ROW_INDEX-2))))
-            
-        body_coords[file_idx] = body_coords[0].to_numpy().astype(float)
+
+        body_coords[file_idx].replace('-', np.nan, inplace=True) 
+        body_coords[file_idx] = body_coords[file_idx].interpolate()
+        body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
     if COORDINATES_CM:
-        cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)
+        cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM[video_idx], frame_number=0)
         body_coords[file_idx] = body_coords[file_idx]/cm_to_pixels[file_idx]
 
 print("done reading coordinate data")
@@ -135,8 +137,8 @@ for video_idx, video_file in enumerate(paths_vid):
 for video_idx, video_file in enumerate(paths_vid):
     open_field_width = open_field_base[video_idx][1] - open_field_base[video_idx][0] # x_max - x_min
     open_field_length = open_field_base[video_idx][3] - open_field_base[video_idx][2] # y_max - y_min
-    cm_to_pixels_x = LENGTH_CM/open_field_width # length in centimeters of open field / size in pixels. 
-    cm_to_pixels_y = LENGTH_CM/open_field_length
+    cm_to_pixels_x = LENGTH_CM[video_idx]/open_field_width # length in centimeters of open field / size in pixels. 
+    cm_to_pixels_y = LENGTH_CM[video_idx]/open_field_length
     
     n_rows = int(np.sqrt(N_BOXES))
     sub_width = open_field_width / n_rows # width of each box.
@@ -168,8 +170,8 @@ for video_idx, video_file in enumerate(paths_vid):
     
 #%% Anxiety-psy_behaviors analysis
 # Function to define frames that animal is in various ROIs. 
-START_FRAME = (START_SEC*FRAMERATE).astype(int)
-END_FRAME = (END_SEC*FRAMERATE).astype(int)
+START_FRAME = np.round(START_SEC*FRAMERATE).astype(int)
+END_FRAME = np.round(END_SEC*FRAMERATE).astype(int)
 def timestamps_in_roi(roi_type, percent_time=True):
     frames_in_roi = [None]*len(paths_vid)
     time_in_roi = np.empty(len(paths_vid))
@@ -254,6 +256,7 @@ for video_idx in range(len(paths_vid)):
     
     # Fine grained movement data
     n_seconds = END_SEC - START_SEC
+    distance_array = distance_array[:n_seconds*int(FRAMERATE[video_idx])]
     distance_per_second = distance_array.reshape(n_seconds, int(FRAMERATE[video_idx])).sum(axis=1)
     time_moving[video_idx] = sum(distance_per_second>=5)/n_seconds*100
     time_running[video_idx] = sum(distance_per_second>20)/n_seconds*100

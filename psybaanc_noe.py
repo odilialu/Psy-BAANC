@@ -46,7 +46,7 @@ import psybaanc_behavior as psy_beh
 import psybaanc_stats as psy_stats
 
 #%% Variables to change
-FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/NOEPers/all" # path to the folder with all video and coordinate data
+FOLDER_PATH = r"E:/Kheirbek/PSI_OFT_acute/PSI_OFT_acute/videos_rotated" # path to the folder with all video and coordinate data
 VIDEO_TYPE = "mp4" # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv" # options: "csv", "xlsx"
 START_SEC = 0 # the time in seconds that you wish to begin analysis.
@@ -114,7 +114,9 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
                                                   usecols=[X_NOSE_COORDINATE_INDEX,Y_NOSE_COORDINATE_INDEX], 
                                                   skiprows=list(range(0,(ROW_INDEX-2))))
             
-        body_coords[file_idx] = body_coords[0].to_numpy().astype(float)
+        body_coords[file_idx].replace('-', np.nan, inplace=True) 
+        body_coords[file_idx] = body_coords[file_idx].interpolate()
+        body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
     if COORDINATES_CM:
         cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)
@@ -157,13 +159,14 @@ for video_idx, video_file in enumerate(paths_vid):
 # Exploration is defined as: 
 # - nose within 3 cm of object, body is not within object mask. (animal cannot be sitting on object)
 # - animal must also be looking at object. 
+START_FRAME = np.round(START_SEC*FRAMERATE).astype(int)
+END_FRAME = np.round(END_SEC*FRAMERATE).astype(int)
 def get_exploration_metrics(object_one_roi, object_one):
     object_one_time = np.empty(len(paths_vid))
     object_one_latency = np.empty(len(paths_vid))
     object_one_visits = np.empty(len(paths_vid))
     for video_idx in range(len(paths_vid)):
-        START_FRAME = START_SEC*FRAMERATE[video_idx]
-        END_FRAME = END_SEC*FRAMERATE[video_idx]
+
         object_one_nose_frames = psy_beh.get_timepoints_in_mask(nose_coords[video_idx], object_one_roi[video_idx])
         object_one_body_frames = psy_beh.get_timepoints_in_mask(body_coords[video_idx], object_one[video_idx])
         common_frames = np.intersect1d(object_one_nose_frames, object_one_body_frames)
@@ -177,11 +180,11 @@ def get_exploration_metrics(object_one_roi, object_one):
         time_looking_object_one = psy_beh.timepoints_looking_at_object(nose_coords[video_idx], body_coords[video_idx], object_coord, angle_thresh_deg=30)
         
         object_one_frames = np.intersect1d(object_one_exploration, time_looking_object_one)
-        object_one_frames = object_one_frames[(object_one_frames>=START_FRAME) & (object_one_frames<=END_FRAME)] # filter to only include analysis time of interest
+        object_one_frames = object_one_frames[(object_one_frames>=START_FRAME[video_idx]) & (object_one_frames<=END_FRAME[video_idx])] # filter to only include analysis time of interest
         
         object_one_time[video_idx] = len(object_one_frames)/FRAMERATE[video_idx]
         
-        object_one_frames_visits = psy_beh.split_into_visits(object_one_frames, min_length = FRAMERATE[video_idx]/6)
+        object_one_frames_visits = psy_beh.split_into_visits(object_one_frames, min_length = int(FRAMERATE[video_idx]/6))
         object_one_visits[video_idx] = len(object_one_frames_visits)
         if object_one_visits[video_idx] > 0:
             object_one_latency[video_idx] = object_one_frames_visits[0][0]/FRAMERATE[video_idx]
@@ -236,8 +239,6 @@ for video_idx, video_file in enumerate(paths_vid):
     corner_rois[video_idx] = [sub_rois[index] for index in corner_roi_idxs]
 
 # Function to define frames that animal is in various ROIs. 
-START_FRAME = (START_SEC*FRAMERATE).astype(int)
-END_FRAME = (END_SEC*FRAMERATE).astype(int)
 def timestamps_in_roi(roi_type, percent_time=True):
     frames_in_roi = [None]*len(paths_vid)
     time_in_roi = np.empty(len(paths_vid))
