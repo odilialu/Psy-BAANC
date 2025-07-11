@@ -122,6 +122,10 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
         body_coords[file_idx] = body_coords[file_idx].interpolate()
         body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
+        nose_coords[file_idx].replace('-', np.nan, inplace=True) 
+        nose_coords[file_idx] = nose_coords[file_idx].interpolate()
+        nose_coords[file_idx] = nose_coords[file_idx].to_numpy().astype(float)
+        
     if COORDINATES_CM:
         cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)
         body_coords[file_idx] = body_coords[file_idx]/cm_to_pixels[file_idx]
