@@ -57,7 +57,7 @@ START_SEC = 0 # the time in seconds that you wish to begin analysis.
 END_SEC = 30*60 # the time in seconds that you wish to end analysis. 
 INTERVAL_SEC = 5*60 # for time-binned measures, what is the bin interval, in seconds? 
 
-LENGTH_CM = [40, 42.5]*4 + [40] # list of true size of your open field box in cm, for each video
+LENGTH_CM = [42.5, 40]*20 # list of true size of your open field box in cm, for each video
 N_BOXES = 25 # How many squares do you want to divide OF into? number must be square of an integer. PsyBAANC keep at 25. 
 
 X_COORDINATE_INDEX = 2# Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
@@ -107,10 +107,24 @@ for file_idx, coordinate_file in enumerate(paths_coordinates):
                                                 usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
                                                 skiprows=list(range(0,(ROW_INDEX-2))))
 
-        body_coords[file_idx].replace('-', np.nan, inplace=True) 
+        # Replace various non-numeric values with NaN
+        body_coords[file_idx].replace(['-', '', ' ', 'NaN', 'nan', 'NULL', 'null'], np.nan, inplace=True)
+        
+        # Convert columns to numeric, coercing errors to NaN
+        for col in body_coords[file_idx].columns:
+            body_coords[file_idx][col] = pd.to_numeric(body_coords[file_idx][col], errors='coerce')
+        
+        # Diagnostics: check if conversion was successful
+        print(f"File {file_idx}: Data types after conversion: {body_coords[file_idx].dtypes.tolist()}")
+        print(f"File {file_idx}: Shape: {body_coords[file_idx].shape}")
+        print(f"File {file_idx}: NaN count: {body_coords[file_idx].isnull().sum().tolist()}")
+        
+        """END OF CHANGES for TypeError: Cannot interpolate with all object-dtype columns in the DataFrame."""
+
+        # Now interpolate
         body_coords[file_idx] = body_coords[file_idx].interpolate()
-        body_coords[file_idx][body_coords[file_idx].columns[0]] = pd.to_numeric(body_coords[file_idx][body_coords[file_idx].columns[0]], errors='coerce')
-        body_coords[file_idx][body_coords[file_idx].columns[1]] = pd.to_numeric(body_coords[file_idx][body_coords[file_idx].columns[1]], errors='coerce')
+        
+        # Convert to numpy array
         body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
         
     if COORDINATES_CM:
