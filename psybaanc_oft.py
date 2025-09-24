@@ -40,14 +40,12 @@ The output variables include:
 """
 
 #%% Import packages
-import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
-os.chdir(r"C:/Users/olu/Documents/Analysis/pythonScripts")
-import psybaanc_behavior as psy_beh
-import psybaanc_stats as psy_stats
+import functions.psybaanc_behavior as psy_beh
+import functions.psybaanc_stats as psy_stats
 
 #%% Variables to change
 FOLDER_PATH = r"E:/Kheirbek/PSI_OFT_acute/PSI_OFT_acute/videos_rotated" # path to the folder with all video and coordinate data
