@@ -3,7 +3,7 @@
 1. **Install requirements:**
 
 ```
-pip install numpy pandas matplotlib opencv-python
+pip install numpy pandas matplotlib opencv-python shapely statsmodels scipy scikit-posthocs
 ````
 
 2. **Format videos:**
