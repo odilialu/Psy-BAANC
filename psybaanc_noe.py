@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Jul  5 14:17:43 2025
+Created on Sat Jul  5 14:17:43 2025 / Edited by cliu to export csv files
 
 @author: olu
 
@@ -42,35 +42,36 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
-import functions.psybaanc_behavior as psy_beh
-import functions.psybaanc_stats as psy_stats
+import psybaanc_behavior as psy_beh
+import psybaanc_stats as psy_stats
 
 #%% Variables to change
-FOLDER_PATH = r"E:/Kheirbek/PSI_OFT_acute/PSI_OFT_acute/videos_rotated" # path to the folder with all video and coordinate data
-VIDEO_TYPE = "mp4" # options: "mp4", "avi", others also likely OK.
+FOLDER_PATH = r"C:\Users\sohal\Box\Sohal lab psilocybin data\Revisions\Revision Analyses\pNOE\videos and dlc data" # path to the folder with all video and coordinate data
+VIDEO_TYPE = "avi" # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv" # options: "csv", "xlsx"
 START_SEC = 0 # the time in seconds that you wish to begin analysis.
 END_SEC = 10*60 # the time in seconds that you wish to end analysis. 
 
-LENGTH_CM = 50 # true size of your open field box in cm
+LENGTH_CM = 49.53 # true size of your open field box in cm
 N_BOXES = 25 # How many squares do you want to divide OF into? number must be square of an integer. PsyBAANC keep at 25. 
 
 X_NOSE_COORDINATE_INDEX = 1
 Y_NOSE_COORDINATE_INDEX = 2
-X_BODY_COORDINATE_INDEX = 16# Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
-Y_BODY_COORDINATE_INDEX = 17# Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
+X_BODY_COORDINATE_INDEX = 4# Index of your x-coordinate column in your coordinates file. Note, index starts at 0.
+Y_BODY_COORDINATE_INDEX = 5# Index of your y-coordinate column in your coordinates file. Note, index starts at 0.
 ROW_INDEX = 4 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
 DATA_DLC = True # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
 COORDINATES_CM = False # Are your coordinates in centimeters? (And not pixels)
 
 OBJECT_ONE_SHAPE = "circle" # options: "circle", "ellipse", "rectangle", "polygon"
 OBJECT_TWO_SHAPE = "circle" # options: "circle", "ellipse", "rectangle", "polygon"
-sex_key = ["M"]*19 + ["F"]*20 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
-treatment_key = ["P"]*4 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5
+sex_key = ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
+treatment_key = ["P","S","S","P","P","P","S","S","P","P","S","S","P","S","P","S","S","P","S","P","S","P","P","S","S","S","P","P","S","S","P","P","S","S","P","P","P","S","S","P"]
 
 zscore = True # Do you want to get z-scored data? True or False
 stats = True # Do you want to return stats? True or False
-plot_traces = True # Do you want to plot animal traces? True or False
+plot_traces = False # Do you want to plot animal traces? True or False
+export_to_csv = True # Do you want to export csv files of relevant data outputs? True or False
 
 # matplotlib plotting parameters
 plt.rcParams['figure.dpi'] = 600
@@ -346,7 +347,23 @@ def get_stats(data_final):
 if stats:
     levenes_results, stats_results = get_stats(data_final)
     
-#%% Plot animal traces for visualization if you like. 
+
+
+if export_to_csv:
+    data_final.to_csv('NOE_dataFinal.csv')
+    data_final_zscored.to_csv('NOE_dataFinal_zscored.csv')
+    
+    stats_results['Avg_time'].to_csv('NOE_stats_avgTime.csv') # Figure 3b
+
+    ## Stats for extended figures
+    stats_results['Latency_explore'].to_csv('NOE_stats_latencyExplore.csv')
+    stats_results['Time_Edges'].to_csv('NOE_stats_timeEdges.csv')
+    stats_results['Time_Corners'].to_csv('NOE_stats_timeCorners.csv')
+    stats_results['Distance'].to_csv('NOE_stats_distance.csv')
+
+
+# %% Plot animal traces for visualization if you like.
 if plot_traces:
     for video_idx, video_path in enumerate(paths_vid):
         psy_beh.plot_traces(video_path, body_coords[video_idx])
+
