@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jun 30 09:41:34 2025 / Edited Oct 1 2025 to include output csv option by cliu
+Created on Mon Jun 30 09:41:34 2025 / Edited by cliu to autosave csv files
 @author: olu
 
 OFT Analysis 
@@ -45,12 +45,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
-os.chdir(r"C:\Users\DeepLabCut\Box\Sohal lab psilocybin data\Revisions\Revision Analyses\Python scripts")
+os.chdir(r"C:\Users\sohal\Box\Sohal lab psilocybin data\Revisions\Revision Analyses\Python scripts")
 import psybaanc_behavior as psy_beh
 import psybaanc_stats as psy_stats
 
 #%% Variables to change
-FOLDER_PATH = r"C:\Users\DeepLabCut\Box\Sohal lab psilocybin data\DeepLabCut Analyses\Sohal aOFT DLC_revisionAnalysis" # path to the folder with all video and coordinate data
+FOLDER_PATH = r"C:\Users\sohal\Box\Sohal lab psilocybin data\Revisions\Revision Analyses\pOFT\videos and dlc data" # path to the folder with all video and coordinate data
 VIDEO_TYPE = "avi" # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv" # options: "csv", "xlsx"
 START_SEC = 0 # the time in seconds that you wish to begin analysis.
@@ -66,8 +66,8 @@ ROW_INDEX = 4 # what row do you start to see data appear in your coordinate file
 DATA_DLC = True # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
 COORDINATES_CM = False # Are your coordinates in centimeters? (And not pixels)
 
-sex_key = ["F"]*5 + ["M"]*10 + ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 + ["F"]*5 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
-treatment_key = ["P", "P","S","P","S","S","P","P","S","P","S","P","S","S","P","P","S","P","S","S","S","P","P","P","S","S","S","S","P","P","P","S","S","S","P","S","S","P","P","P"]  #Create a list indicating the treatment of the animals, i.e., ["S", "S", "P"]
+sex_key = ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 + ["F"]*5 + ["M"]*5 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
+treatment_key = ["S","S","P","P","P","P","P","S","S","P","S","S","P","P","S","S","S","P","P","S","S","P","S","P","S","P","S","S","P","P","S","P","P","P","S","S","P","S","S","P"] #Create a list indicating the treatment of the animals, i.e., ["S", "S", "P"]
 
 zscore = True # Do you want to get z-scored data? True or False
 stats = True # Do you want to return stats? True or False
@@ -377,7 +377,6 @@ if plot_traces:
 if export_to_csv:
     data_final.to_csv('OFT_data.csv')
     data_final_zscored.to_csv('OFT_data_zscored.csv')
-    data_final_binned.to_csv('OFT_data_binned.csv')
     data_final_binned['Velocity'].to_csv('OFT_binned_velocity.csv')
     data_final_binned['Time_moving'].to_csv('OFT_binned_timeMoving.csv')
     data_final_binned['Velocity_while_moving'].to_csv('OFT_binned_velocityMoving.csv')
