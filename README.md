@@ -1,7 +1,10 @@
 ### Usage
 
-1. **Install requirements:**
+1. **Install requirements in a new conda environment:**
 
+```
+conda create --name psybaanc python=3.10
+```
 ```
 pip install numpy pandas matplotlib opencv-python shapely statsmodels scipy scikit-posthocs
 ````
