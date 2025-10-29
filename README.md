@@ -6,7 +6,7 @@
 conda create --name psybaanc python=3.10
 ```
 ```
-pip install numpy pandas matplotlib opencv-python shapely statsmodels scipy scikit-posthocs
+pip install numpy pandas matplotlib opencv-python shapely statsmodels scipy scikit-posthocs openpyxl
 ````
 
 2. **Format videos:**
