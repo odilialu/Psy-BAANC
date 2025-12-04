@@ -4,130 +4,154 @@ Created on Wed Jul  2 16:01:40 2025
 
 @author: olu
 
-EPM Analysis 
+EPM Analysis
 Instructions:
     1. Put all video and coordinate files from a single experiment in a folder.
     2. Adjust the variables in the "Variables to change" section to match your settings.
-    3. Run the script. Follow command-line instructions when prompted. 
-    4. Update Supplementary table 1 [meta data sheet] with your raw data.
-    5. Update Supplementary table 2 [stats table] with the statistics.
-    6. Update your Prism files with the raw data. Ensure figure format is that of the paper.
-    7. Upload your Prism file to the google drive, and notify Odilia when complete. 
-    
-The output data is stored in: 
-    data_final: all summary measures
-    data_final_zscored: all summary measures zscored to sal conditions
-    levenes_results: statistical results from levene's test for homogeneity of variances
-    stats_results: statistical results for every measure. 
-        - If equal variances: 
-            Two-way ANOVA. If interaction significant, t-test post-hoc comparisons with Sidak's corrections
-        - If unequal variances: 
-            One-way Kruskal-Wallis. If significant, Dunn's post hoc comparisons with Holms corrections
-    
-The output variables include: 
+    3. Run the script. Follow command-line instructions as prompted.
+    4. Update Supplementary table 1 (meta data sheet) with data in the "data_all" variable.
+
+The variables in data_all include summary data for the following measures:
     'Time_Open': (%) time in open arms
     'Time_Center': (%) time in center of epm
     'Latency_Open': (%) time it took for mouse to first enter open arm
     'Distance': (cm) distance travelled in epm
-  
+
 """
 
-#%% Import packages
+# %% Import packages
+import os
 import numpy as np
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 import cv2
 import functions.psybaanc_behavior as psy_beh
 import functions.psybaanc_stats as psy_stats
+import functions.psybaanc_plot as psy_plot
 
-#%% Variables to change
-FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/EPMPers" # path to the folder with all video and coordinate data
-VIDEO_TYPE = "avi" # options: "mp4", "avi", others also likely OK.
-COORDINATE_FILE_TYPE = "csv" # options: "csv", "xlsx"
-START_SEC = 0 # the time in seconds that you wish to begin analysis.
-END_SEC = 10*60 # the time in seconds that you wish to end analysis. 
+matplotlib.use("Agg")
 
-LENGTH_CM = 75.5 # true size (cm) of one dimension of your epm (used for pixel to cm calibration)
+# %% Variables to change
+INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
+FOLDER_PATH = r"Y:\PsyBAANC\paperExperiments\chronic CORT\EPM\cropped\all"  # path to folder with data
+VIDEO_TYPE = "mp4"  # options: "mp4", "avi", others also likely OK.
+COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
+START_SEC = 0  # the time in seconds that you wish to begin analysis.
+END_SEC = 10*60  # the time in seconds that you wish to end analysis.
 
-X_COORDINATE_INDEX = 13 # Index of your x-coordinate column in your coordinates file. Note, index starts at 0. 
-Y_COORDINATE_INDEX = 14 # Index of your y-coordinate column in your coordinates file. Note, index starts at 0. 
-ROW_INDEX = 4 # what row do you start to see data appear in your coordinate files? For DLC, usually 4. 
-DATA_DLC = True # Is your data from deeplabcut (DLC)? true or false. If true, linear interpolation based on likelihood is done on coordinates.
-COORDINATES_CM = False # Are your coordinates in centimeters? (And not pixels)
+LENGTH_CM = 75.5  # true size (cm) of one dimension of your epm (used for pixel to cm calibration)
 
-sex_key = ["M"]*27 + ["F"]*30 # Create a list indicating the sex of the animals, i.e., ["M", "F", "M"]
-treatment_key = (["S", "S"] + ["P"]*5 + ["S"]*5 + ["P", "P"] + ["S"]*3 + ["P"]*6 + ["S"]*2 + ["P", "P"]
-                 + ["P"]*3 + ["S"]*3 + ["P"]*3 + ["S"]*2 + ["P"]*2 + ["S"]*5 + ["P"]*3 + ["S"]*3 + ["P"]*2 + ["S"]*2 + ["P"]*2)
+X_COORDINATE_INDEX = 7  # Index of x-coord column in coordinates file (index starts at 0).
+Y_COORDINATE_INDEX = 8  # Index of y-coord column in coordinates file (index starts at 0).
+ROW_INDEX = 4  # Row number that position data starts in coordinate files
+DATA_DLC = True  # Is your data from deeplabcut (DLC)? true or false.
+COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
 
-zscore = True # Do you want to get z-scored data? True or False
-stats = True # Do you want to return stats? True or False
-plot_traces = False # Do you want to plot animal traces? True or False
+INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
+FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/EPMAcute/Videos/all"  # path to folder with data
+VIDEO_TYPE = "mp4"  # options: "mp4", "avi", others also likely OK.
+COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
+START_SEC = 0  # the time in seconds that you wish to begin analysis.
+END_SEC = 10*60  # the time in seconds that you wish to end analysis.
 
-# matplotlib plotting parameters
-plt.rcParams['figure.dpi'] = 600
-plt.rcParams['font.family'] = 'Arial'
-plt.rcParams['font.size'] = 8
+LENGTH_CM = 75.5  # true size (cm) of one dimension of your epm (used for pixel to cm calibration)
 
-#%% Get paths of videos and csv files.
+X_COORDINATE_INDEX = 13  # Index of x-coord column in coordinates file (index starts at 0).
+Y_COORDINATE_INDEX = 14  # Index of y-coord column in coordinates file (index starts at 0).
+ROW_INDEX = 4  # Row number that position data starts in coordinate files
+DATA_DLC = True  # Is your data from deeplabcut (DLC)? true or false.
+COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
+
+sex_key = ["M"]*20 + ["F"]*20  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
+treatment_key = (["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5 +
+                 ["S"]*5 + ["P"]*5 + ["P"]*5 + ["S"]*5)  # List of treatment of animals.
+stress_key = [np.nan]*40  # List of animal's stress condition. Options: np.nan, "Ctrl", "Stress"
+
+# Dataframe print settings (do not change)
+pd.set_option('display.max_rows', None)  # Display all rows
+pd.set_option('display.max_columns', None)  # Display all columns
+pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
+pd.set_option('display.max_colwidth', None)  # Display full content of each column
+
+# %% Get paths of videos and csv files
 paths_coordinates = psy_beh.get_file_paths(FOLDER_PATH, COORDINATE_FILE_TYPE)
 paths_vid = psy_beh.get_file_paths(FOLDER_PATH, VIDEO_TYPE)
 
-#%% Get framerate of all your video files
+# confirm accuracy of files and key information
+coordinate_ids = [os.path.split(string)[-1] for string in paths_coordinates]
+vid_ids = [os.path.split(string)[-1] for string in paths_vid]
+
+files_analyzed = pd.DataFrame({"vid ID": vid_ids, "coordinate ID": coordinate_ids,
+                               "sex": sex_key, "treatment": treatment_key})
+print(f"""
+      Please check that data is correct:  \n
+      - vid ID and coordinate ID correspond to the same animal. \n
+      - sex and treatment are assigned correctly.\n
+      {files_analyzed}
+      """)
+
+while True:
+    user_input = input("Type 'yes'/'no' to indicate whether data is accurate. \n")
+    if user_input.lower() == 'yes':
+        break  # Exit the loop
+    elif user_input.lower() == 'no':
+        raise ValueError("Please correct IDs or group assignments as needed and re-run script")
+
+# %% Get framerate of all your video files
 FRAMERATE = np.empty((len(paths_vid)))
 for video_idx, video_path in enumerate(paths_vid):
     cap = cv2.VideoCapture(video_path)
-    FRAMERATE[video_idx] = (cap.get(cv2.CAP_PROP_FPS))
+    FRAMERATE[video_idx] = cap.get(cv2.CAP_PROP_FPS)
 
-#%% Read in all of the coordinate data.
-print("reading coordinate data. please be patient")
-body_coords = [None]*len(paths_vid)
-cm_to_pixels = np.empty(len(paths_vid))
-for file_idx, coordinate_file in enumerate(paths_coordinates):
-    if DATA_DLC == True: # use likelihood estimates to do linear interpolation on uncertain coordinates. 
-        coordinates = pd.read_csv(coordinate_file, skiprows=list(range(0, ROW_INDEX-2)))
-        body_coords[file_idx] = psy_beh.get_body_parts(coordinates, body_part_idx_x = X_COORDINATE_INDEX, likelihood=0.6)
+print(f"Note: the framerate of your files is {FRAMERATE}.")
 
-    else: # otherwise read in coordinates as is. 
-        if COORDINATE_FILE_TYPE == "xlsx":
-            body_coords[file_idx] = pd.read_excel(coordinate_file, 
-                                                  usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
-                                                  skiprows=list(range(0,(ROW_INDEX-2))))
-        elif COORDINATE_FILE_TYPE == "csv":
-            body_coords[file_idx] = pd.read_csv(coordinate_file, 
-                                                usecols=[X_COORDINATE_INDEX,Y_COORDINATE_INDEX], 
-                                                skiprows=list(range(0,(ROW_INDEX-2))))
-            
-        body_coords[file_idx].replace('-', np.nan, inplace=True) 
-        body_coords[file_idx] = body_coords[file_idx].interpolate()
-        body_coords[file_idx] = body_coords[file_idx].to_numpy().astype(float)
-        
-    if COORDINATES_CM:
-        cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx], real_world_cm=LENGTH_CM, frame_number=0)
+# %% Read in all of the coordinate data.
+print("""
+      READING COORDINATE DATA
+      """)
+body_coords = psy_beh.read_coordinates(paths_coordinates,
+                                       X_COORDINATE_INDEX, Y_COORDINATE_INDEX, ROW_INDEX,
+                                       DATA_DLC=DATA_DLC)
+
+if COORDINATES_CM:
+    cm_to_pixels = np.empty(len(paths_coordinates))
+    for file_idx, coordinates in enumerate(body_coords):
+        cm_to_pixels[file_idx] = psy_beh.calibrate_pixels_to_cm(paths_vid[file_idx],
+                                                                real_world_cm=LENGTH_CM,
+                                                                frame_number=100)
         body_coords[file_idx] = body_coords[file_idx]/cm_to_pixels[file_idx]
 
-print("done reading coordinate data")
+# %% Define all relevant ROIs if you have not already.
+# Note: ROIs are saved for each video after defining them.
+# If you want to re-define an ROI, you must delete the existing one.
 
-#%% Define all relevant ROIs. 
-# Preallocate lists. 
+# Preallocate lists.
 epm_roi_open_arm = [None]*(len(paths_vid))
 epm_roi_closed_arm = [None]*(len(paths_vid))
 epm_roi_center = [None]*(len(paths_vid))
 
-# First, loop through all the videos and draw a polygon that defines the roi of interest. 
-# Function saves the ROI mask into a folder with the roi name in your video path so you only define it for each video once.
-# If you want to re-define the ROI, you must delete the ROI pickle that is saved in the folder.
-print("If not already done, draw polygon ROIs to define the open and closed arms of the epm.")
+# Define open and closed arms.
+print("""
+      Draw a polygon ROI to define the open/closed arms or read in existing ROIs.
+      """)
 for video_idx, video_file in enumerate(paths_vid):
-    epm_roi_open_arm[video_idx] = psy_beh.get_roi_flexible(video_file, "open_arm", "polygon", coordinates = None)
-    epm_roi_closed_arm[video_idx] = psy_beh.get_roi_flexible(video_file, "closed_arm", "polygon", coordinates = None)
-    
-    # define overlap between closed and open arms as center. Remove center from open and closed arm masks. 
-    epm_roi_center[video_idx] = cv2.bitwise_and(epm_roi_open_arm[video_idx], epm_roi_closed_arm[video_idx])
-    epm_roi_open_arm[video_idx] = cv2.subtract(epm_roi_open_arm[video_idx], epm_roi_center[video_idx])
-    epm_roi_closed_arm[video_idx] = cv2.subtract(epm_roi_closed_arm[video_idx], epm_roi_center[video_idx])
-    
-#%% Main analysis: time in open arms (%), time in center (%), number of open arm entries, latency to enter open arm, distance travelled
-length_experiment = END_SEC-START_SEC
+    COORDINATES_PLOTTED = body_coords[video_idx]
+    epm_roi_open_arm[video_idx] = psy_beh.get_roi_mask(video_file, "open_arm", "polygon",
+                                                       COORDINATES_PLOTTED)
+    epm_roi_closed_arm[video_idx] = psy_beh.get_roi_mask(video_file, "closed_arm", "polygon",
+                                                         COORDINATES_PLOTTED)
+
+    # define overlap between closed and open arms as center.
+    epm_roi_center[video_idx] = cv2.bitwise_and(epm_roi_open_arm[video_idx],
+                                                epm_roi_closed_arm[video_idx])
+    epm_roi_open_arm[video_idx] = cv2.subtract(epm_roi_open_arm[video_idx],
+                                               epm_roi_center[video_idx])
+    epm_roi_closed_arm[video_idx] = cv2.subtract(epm_roi_closed_arm[video_idx],
+                                                 epm_roi_center[video_idx])
+
+# %% Main analysis
+LENGTH_EXPERIMENT = END_SEC-START_SEC
 
 frames_open = [None]*len(paths_vid)
 frames_open_visits = [None]*len(paths_vid)
@@ -144,84 +168,91 @@ cm_to_pixels = np.empty(len(paths_vid))
 for video_idx, video_path in enumerate(paths_vid):
     START_FRAME = int(round(START_SEC*FRAMERATE[video_idx]))
     END_FRAME = int(round(END_SEC*FRAMERATE[video_idx]))
-    frames_open[video_idx] = psy_beh.get_timepoints_in_mask(body_coords[video_idx], epm_roi_open_arm[video_idx])
-    frames_open[video_idx] = frames_open[video_idx][(frames_open[video_idx]>=START_FRAME) & (frames_open[video_idx] <= END_FRAME)]
-    frames_open_visits[video_idx] = psy_beh.split_into_visits(frames_open[video_idx], min_length = (FRAMERATE[video_idx]/6))
-    
-    time_open[video_idx] = len(frames_open[video_idx])/FRAMERATE[video_idx]/length_experiment*100
+    frames_open[video_idx] = psy_beh.get_timepoints_in_mask(body_coords[video_idx],
+                                                            epm_roi_open_arm[video_idx])
+    frames_open[video_idx] = frames_open[video_idx][(frames_open[video_idx] >= START_FRAME) &
+                                                    (frames_open[video_idx] <= END_FRAME)]
+    frames_open_visits[video_idx] = psy_beh.split_into_visits(frames_open[video_idx],
+                                                              min_length=FRAMERATE[video_idx]/6)
+
+    time_open[video_idx] = len(frames_open[video_idx])/FRAMERATE[video_idx]/LENGTH_EXPERIMENT*100
     visits_open[video_idx] = len(frames_open_visits[video_idx])
-    latency_open[video_idx] = frames_open_visits[video_idx][0][0]/FRAMERATE[video_idx] # in seconds.
-    
-    frames_center = psy_beh.get_timepoints_in_mask(body_coords[video_idx], epm_roi_center[video_idx])
-    frames_center = frames_center[(frames_center>=START_FRAME) & (frames_center<=END_FRAME)]
-    time_center[video_idx] = len(frames_center)/FRAMERATE[video_idx]/length_experiment*100
-    
+    if len(frames_open_visits[video_idx]) > 0:
+        latency_open[video_idx] = frames_open_visits[video_idx][0][0]/FRAMERATE[video_idx]
+    else:
+        latency_open[video_idx] = END_FRAME/FRAMERATE[video_idx]
+    frames_center = psy_beh.get_timepoints_in_mask(body_coords[video_idx],
+                                                   epm_roi_center[video_idx])
+    frames_center = frames_center[(frames_center >= START_FRAME) & (frames_center <= END_FRAME)]
+    time_center[video_idx] = len(frames_center)/FRAMERATE[video_idx]/LENGTH_EXPERIMENT*100
+
     # Get distance travelled
-    cm_to_pixels[video_idx] = psy_beh.calibrate_pixels_to_cm(video_path, real_world_cm=LENGTH_CM, frame_number=0)
-    
-    # get distance array: distance travelled per frame. 
+    cm_to_pixels[video_idx] = psy_beh.calibrate_pixels_to_cm(video_path,
+                                                             real_world_cm=LENGTH_CM,
+                                                             frame_number=100)
+
+    # get distance array: distance travelled per frame.
     diff_array = np.diff(body_coords[video_idx], axis=0)
     diff_array = diff_array * cm_to_pixels[video_idx]
     distance_array = np.sqrt((diff_array[:, 0]**2) + (diff_array[:, 1]**2))
-    distance_array = distance_array[START_FRAME:END_FRAME]
-    
+    distance_array = distance_array[START_FRAME:END_FRAME+1]
+
     # Summary locomotion metrics
     distance_travelled[video_idx] = sum(distance_array)
-    velocity[video_idx] = distance_travelled[video_idx]/length_experiment
+    velocity[video_idx] = distance_travelled[video_idx]/LENGTH_EXPERIMENT
 
-#%% Create data dictionary for summary data. 
-data_dict = {
+# %% Create data dictionary for summary data.
+data_summary_dict = {
     'Animal_ID': paths_vid,
     'Sex': sex_key,
     'Treatment': treatment_key,
+    'Stress': stress_key,
+    'Institution': INSTITUTION,
     'Time_Open': time_open,
     'Time_Center': time_center,
     'Latency_Open': latency_open,
     'Distance': distance_travelled,
     }
 
-data_final = pd.DataFrame(data_dict)
-column_names = data_final.columns[3:].tolist()
+data_summary_df = pd.DataFrame(data_summary_dict)
+column_names = data_summary_df.columns[-4:].tolist()
+column_labels = ["Time in open arms (%)", "Time in center (%)", "Latency open arm entry (s)",
+                 "Distance travelled (cm)"]
+data_all = data_summary_df
 
-#%% Z-scored data of summary data
-if zscore:
-    data_final_zscored = psy_beh.zscore_dataframe(data_final)
+# %% Do statistical tests.
+stats_summary_results = {}
+for col in column_names:
+    if "Stress" not in stress_key:
+        stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
+    else:
+        stats_summary_results[col] = psy_stats.stats_treatment_sex_third(data_summary_df, col,
+                                                                         "Stress",
+                                                                         within_subject=False)
+# %% Plot all data
+os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
 
-#%% Do statistical tests.
-def get_stats(data_final):
-    levenes = psy_stats.levenes_test_dataframe(data_final)
-    print(psy_stats.sample_size(data_final))
-    
-    results = [None]*len(column_names)
-    for col_idx, col_name in enumerate(column_names):
-        if levenes[levenes["Measure"]==col_name]["P_value"].tolist()[0] < 0.05:
-            kruskal_results = np.array(psy_stats.kruskal_wallis(data_final, col_name)).reshape(1, -1)
-            keys = ["h_stat", "p-value"]
-            if kruskal_results[0, 1] < 0.05:
-                pvals_holm = psy_stats.dunns(data_final, col_name).reshape(1, -1)
-                kruskal_results = np.concatenate((kruskal_results, pvals_holm), axis=1)
-                keys = ["h-stat", "p-value", "m,sal v. m,psi", "f,sal v. f,psi", "m,sal v. f,sal", "m,psi v. f,psi"]
-                
-            results[col_idx] = pd.DataFrame(data = kruskal_results, columns = keys)
-                
-        else:
-            formula = col_name + ' ~ Treatment*Sex'
-            results[col_idx] = (psy_stats.sm_ANOVA(formula=formula, data=data_final))
-            if results[col_idx].loc["Treatment:Sex", "PR(>F)"] < 0.05:
-                results_sidaks = psy_stats.sidaks(data_final, col_name)
-                results[col_idx] = pd.concat([results[col_idx], results_sidaks])
-                
-    stats_results =dict(zip(column_names, results))
-    levenes_results = levenes.set_index('Measure').to_dict(orient='index')
-    
-    return levenes_results, stats_results
+fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5))
+for col_i, col in enumerate(column_names):
+    if "Stress" not in stress_key:
+        psy_plot.plot_individual_lab(ax[col_i], data_summary_df, col, column_labels[col_i],
+                                     INSTITUTION, stats_summary_results[col]["significance"])
+    else:
+        psy_plot.plot_bars_thirdfactor(ax[col_i], data_summary_df, col, column_labels[col_i],
+                                       INSTITUTION)
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "summary_data_plots.png"))
+plt.close()
 
-if stats:
-    levenes_results, stats_results = get_stats(data_final)
-    
-#%% Plot animal traces for visualization if you like. 
-if plot_traces:
-    for video_idx, video_path in enumerate(paths_vid):
-        psy_beh.plot_traces(video_path, body_coords[video_idx])
-    
-    
+# %% Plot animal traces for visualization.
+for video_idx, video_path in enumerate(paths_vid):
+    fig, ax = plt.subplots()
+    psy_plot.plot_traces(ax, video_path, body_coords[video_idx])
+    ax.imshow(epm_roi_center[video_idx], cmap='Greens', alpha=0.25)
+    ax.imshow(epm_roi_open_arm[video_idx], cmap='Reds', alpha=0.25)
+    ax.imshow(epm_roi_closed_arm[video_idx], cmap='Purples', alpha=0.25)
+    plt.savefig(os.path.join(FOLDER_PATH, "saved_data", f"{video_idx:02}_trace.png"))
+    plt.close()
+
+# %% Save raw data if wanted.
+os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
+data_all.to_csv(os.path.join(FOLDER_PATH, "saved_data", 'EPM_data.csv'), index=False)
