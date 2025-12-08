@@ -31,23 +31,13 @@ import functions.psybaanc_stats as psy_stats
 import functions.psybaanc_plot as psy_plot
 
 matplotlib.use("Agg")
+# Dataframe print settings (do not change)
+pd.set_option('display.max_rows', None)  # Display all rows
+pd.set_option('display.max_columns', None)  # Display all columns
+pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
+pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
 # %% Variables to change
-INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
-FOLDER_PATH = r"Y:\PsyBAANC\paperExperiments\chronic CORT\EPM\cropped\all"  # path to folder with data
-VIDEO_TYPE = "mp4"  # options: "mp4", "avi", others also likely OK.
-COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
-START_SEC = 0  # the time in seconds that you wish to begin analysis.
-END_SEC = 10*60  # the time in seconds that you wish to end analysis.
-
-LENGTH_CM = 75.5  # true size (cm) of one dimension of your epm (used for pixel to cm calibration)
-
-X_COORDINATE_INDEX = 7  # Index of x-coord column in coordinates file (index starts at 0).
-Y_COORDINATE_INDEX = 8  # Index of y-coord column in coordinates file (index starts at 0).
-ROW_INDEX = 4  # Row number that position data starts in coordinate files
-DATA_DLC = True  # Is your data from deeplabcut (DLC)? true or false.
-COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
-
 INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
 FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/EPMAcute/Videos/all"  # path to folder with data
 VIDEO_TYPE = "mp4"  # options: "mp4", "avi", others also likely OK.
@@ -66,13 +56,7 @@ COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
 sex_key = ["M"]*20 + ["F"]*20  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
 treatment_key = (["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5 +
                  ["S"]*5 + ["P"]*5 + ["P"]*5 + ["S"]*5)  # List of treatment of animals.
-stress_key = [np.nan]*40  # List of animal's stress condition. Options: np.nan, "Ctrl", "Stress"
-
-# Dataframe print settings (do not change)
-pd.set_option('display.max_rows', None)  # Display all rows
-pd.set_option('display.max_columns', None)  # Display all columns
-pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
-pd.set_option('display.max_colwidth', None)  # Display full content of each column
+stress_key = [np.nan]*40
 
 # %% Get paths of videos and csv files
 paths_coordinates = psy_beh.get_file_paths(FOLDER_PATH, COORDINATE_FILE_TYPE)
@@ -167,7 +151,7 @@ cm_to_pixels = np.empty(len(paths_vid))
 
 for video_idx, video_path in enumerate(paths_vid):
     START_FRAME = int(round(START_SEC*FRAMERATE[video_idx]))
-    END_FRAME = int(round(END_SEC*FRAMERATE[video_idx]))
+    END_FRAME = int(round(END_SEC*FRAMERATE[video_idx])) - 1
     frames_open[video_idx] = psy_beh.get_timepoints_in_mask(body_coords[video_idx],
                                                             epm_roi_open_arm[video_idx])
     frames_open[video_idx] = frames_open[video_idx][(frames_open[video_idx] >= START_FRAME) &
@@ -226,9 +210,7 @@ for col in column_names:
     if "Stress" not in stress_key:
         stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
     else:
-        stats_summary_results[col] = psy_stats.stats_treatment_sex_third(data_summary_df, col,
-                                                                         "Stress",
-                                                                         within_subject=False)
+        stats_summary_results[col] = psy_stats.stats_treatment_sex_stress(data_summary_df, col)
 # %% Plot all data
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
 
@@ -239,19 +221,22 @@ for col_i, col in enumerate(column_names):
                                      INSTITUTION, stats_summary_results[col]["significance"])
     else:
         psy_plot.plot_bars_thirdfactor(ax[col_i], data_summary_df, col, column_labels[col_i],
-                                       INSTITUTION)
-plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "summary_data_plots.png"))
+                                       INSTITUTION, stats_summary_results[col]["significance"])
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "EPM_summary_data_plots.png"))
 plt.close()
 
 # %% Plot animal traces for visualization.
 for video_idx, video_path in enumerate(paths_vid):
-    fig, ax = plt.subplots()
-    psy_plot.plot_traces(ax, video_path, body_coords[video_idx])
-    ax.imshow(epm_roi_center[video_idx], cmap='Greens', alpha=0.25)
-    ax.imshow(epm_roi_open_arm[video_idx], cmap='Reds', alpha=0.25)
-    ax.imshow(epm_roi_closed_arm[video_idx], cmap='Purples', alpha=0.25)
-    plt.savefig(os.path.join(FOLDER_PATH, "saved_data", f"{video_idx:02}_trace.png"))
-    plt.close()
+    mouse_name = os.path.splitext(vid_ids[video_idx])[0]
+    path_trace = os.path.join(FOLDER_PATH, "saved_data", f"{mouse_name}_trace.png")
+    if os.path.exists(path_trace) is False:
+        fig, ax = plt.subplots()
+        psy_plot.plot_traces(ax, video_path, body_coords[video_idx])
+        ax.imshow(epm_roi_center[video_idx], cmap='Greens', alpha=0.25)
+        ax.imshow(epm_roi_open_arm[video_idx], cmap='Reds', alpha=0.25)
+        ax.imshow(epm_roi_closed_arm[video_idx], cmap='Purples', alpha=0.25)
+        plt.savefig(path_trace)
+        plt.close()
 
 # %% Save raw data if wanted.
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)

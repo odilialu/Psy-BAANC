@@ -43,35 +43,34 @@ import functions.psybaanc_behavior as psy_beh
 import functions.psybaanc_stats as psy_stats
 import functions.psybaanc_plot as psy_plot
 
+# settings
 matplotlib.use('Agg')
+pd.set_option('display.max_rows', None)  # Display all rows
+pd.set_option('display.max_columns', None)  # Display all columns
+pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
+pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
 # %% Variables to change
 INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
-FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/OFT_EPM/OFT_all"  # path to folder with data
+FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/OFTPers/all"  # path to folder with data
 VIDEO_TYPE = "avi"  # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
 START_SEC = 0  # the time in seconds that you wish to begin analysis.
 END_SEC = 30*60  # the time in seconds that you wish to end analysis.
 INTERVAL_SEC = 5*60  # for time-binned measures, what is the bin interval, in seconds?
 
-LENGTH_CM = [50]*40  # list of true size of your open field box in cm, for each video
+LENGTH_CM = [50]*39  # list of true size of your open field box in cm, for each video
 N_BOXES = 25  # How many squares do you want to divide OF into? Keep at 25.
 
-X_COORDINATE_INDEX = 25  # Index of x-coord column in coordinates file (index starts at 0).
-Y_COORDINATE_INDEX = 26  # Index of y-coord column in coordinates file (index starts at 0).
+X_COORDINATE_INDEX = 13  # Index of x-coord column in coordinates file (index starts at 0).
+Y_COORDINATE_INDEX = 14  # Index of y-coord column in coordinates file (index starts at 0).
 ROW_INDEX = 4  # Row number that position data starts in coordinate files
 DATA_DLC = True  # Is your data from deeplabcut (DLC)? true or false.
 COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
 
-sex_key = ["M"]*20 + ["F"]*20  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
-treatment_key = (["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*5 +
+sex_key = ["M"]*19 + ["F"]*20  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
+treatment_key = (["P"]*5 + ["S"]*5 + ["P"]*5 + ["S"]*4 +
                  ["S"]*5 + ["P"]*5 + ["S"]*5 + ["P"]*5)  # List of treatment of animals.
-
-# Dataframe print settings (do not change)
-pd.set_option('display.max_rows', None)  # Display all rows
-pd.set_option('display.max_columns', None)  # Display all columns
-pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
-pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
 # %% Get paths of videos and csv files
 paths_coordinates = psy_beh.get_file_paths(FOLDER_PATH, COORDINATE_FILE_TYPE)
@@ -175,7 +174,7 @@ for video_idx, video_file in enumerate(paths_vid):
 # %% Anxiety-psy_behaviors analysis
 # Function to define frames that animal is in various ROIs.
 START_FRAME = np.round(START_SEC*FRAMERATE).astype(int)
-END_FRAME = np.round(END_SEC*FRAMERATE).astype(int)
+END_FRAME = np.round(END_SEC*FRAMERATE).astype(int) - 1
 
 
 def timestamps_in_roi(roi_type, percent_time=True):
@@ -354,7 +353,7 @@ column_labels = ["Time in center (%)", "Time in corners (%)", "Distance in cente
                  "Velocity (cm/s)", "Time spent moving (%)", "Velocity while moving (cm/s)"]
 
 
-def make_binned_data_df(data_for_df, bin_name, col_name):
+def make_binned_data_df(data_for_df, bin_name, col_name, time_multiplier=5):
     """
     Returns a dataframe with binned data in long format.
     Parameters:
@@ -369,7 +368,8 @@ def make_binned_data_df(data_for_df, bin_name, col_name):
     - df_final: pd.DataFrame
         DataFrame in long format with columns for animal info, bin variable, and data variable.
     """
-    df = pd.DataFrame(data_for_df, columns=[f'{i}' for i in range(data_for_df.shape[1])])
+    df = pd.DataFrame(data_for_df,
+                      columns=[i for i in range(data_for_df.shape[1])])
     melted_df = df.melt(var_name=bin_name, value_name=col_name)
     df_final = pd.concat([animal_info, melted_df], axis=1)
     df_final[bin_name] = df_final[bin_name].astype(float)
@@ -387,7 +387,7 @@ data_to_bin = [time_in_center_bins, time_in_corners_bins,
                time_moving_bins, velocity_while_moving_bins]
 binned_data_df = []
 for col_i, binned_data in enumerate(data_to_bin):
-    binned_data_df.append(make_binned_data_df(binned_data, "Interval", column_names[col_i]))
+    binned_data_df.append(make_binned_data_df(binned_data, "Time", column_names[col_i]))
 data_binned_dict = dict(zip(column_names, binned_data_df))
 
 data_binned_dict_flat = {}
@@ -406,7 +406,7 @@ stats_binned_results = {}
 for col in column_names:
     stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
     stats_binned_results[col] = psy_stats.stats_treatment_sex_third(data_binned_dict[col],
-                                                                    col, 'Interval')
+                                                                    col, 'Time')
 
 # %% Plot all results
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
@@ -415,21 +415,27 @@ fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5
 for col_i, col in enumerate(column_names):
     psy_plot.plot_individual_lab(ax[col_i], data_summary_df, col, column_labels[col_i],
                                  INSTITUTION, stats_summary_results[col]["significance"])
-plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "summary_data_plots.png"))
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "OFT_summary_plots.png"))
+plt.close()
 
 fig, ax = plt.subplots(1, len(column_names), figsize=(1.5*len(column_names), 1.5))
 for col_i, col in enumerate(column_names):
     psy_plot.plot_over_time(ax[col_i], data_binned_dict, col, column_labels[col_i],
                             [5+START_SEC, END_SEC/60+5])
-plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "time_binned_plots.png"))
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "OFT_time_binned_plots.png"))
+plt.close()
 
 # %% Plot animal traces for visualization.
 for video_idx, video_path in enumerate(paths_vid):
-    fig, ax = plt.subplots()
-    psy_plot.plot_traces(ax, video_path, body_coords[video_idx])
-    # show open field base rectangle
-    psy_plot.plot_roi_coords(ax, open_field_base[video_idx])
-    plt.savefig(os.path.join(FOLDER_PATH, "saved_data", f"{video_idx:02}_trace.png"))
+    mouse_name = os.path.splitext(vid_ids[video_idx])[0]
+    path_trace = os.path.join(FOLDER_PATH, "saved_data", f"{mouse_name}_trace.png")
+    if os.path.exists(path_trace) is False:
+        fig, ax = plt.subplots()
+        psy_plot.plot_traces(ax, video_path, body_coords[video_idx])
+        # show open field base rectangle
+        psy_plot.plot_roi_coords(ax, open_field_base[video_idx])
+        plt.savefig(path_trace)
+        plt.close()
 
 # %% Save csv files with the relevant output data in the same directory as the script.
 data_all.to_csv(os.path.join(FOLDER_PATH, "saved_data", 'OFT_data.csv'), index=False)

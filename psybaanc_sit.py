@@ -41,10 +41,15 @@ import functions.psybaanc_stats as psy_stats
 import functions.psybaanc_plot as psy_plot
 
 matplotlib.use('Agg')
+# Dataframe print settings (do not change)
+pd.set_option('display.max_rows', None)  # Display all rows
+pd.set_option('display.max_columns', None)  # Display all columns
+pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
+pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
 # %% Variables to change
 INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
-FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/SIT_SM/SIT_all"  # path to folder with data
+FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/SM_SIT/SIT_Pers_all"  # path to folder with data
 VIDEO_TYPE = "avi"  # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
 START_SEC = 0  # the time in seconds that you wish to begin analysis.
@@ -63,15 +68,9 @@ COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
 OBJECT_ONE_SHAPE = "ellipse"  # options: "circle", "ellipse", "rectangle", "polygon"
 OBJECT_TWO_SHAPE = "ellipse"  # options: "circle", "ellipse", "rectangle", "polygon"
 
-sex_key = ["M"]*14 + ["F"]*14  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
-treatment_key = (["P"]*3 + ["S"]*7 + ["P"]*4 +
-                 ["P"]*3 + ["S"]*6 + ["P"]*5)  # List of treatment of animals.
-
-# Dataframe print settings (do not change)
-pd.set_option('display.max_rows', None)  # Display all rows
-pd.set_option('display.max_columns', None)  # Display all columns
-pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
-pd.set_option('display.max_colwidth', None)  # Display full content of each column
+sex_key = ["M"]*16 + ["F"]*16  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
+treatment_key = (["P"]*5 + ["S"]*5 + ["P"]*3 + ["S"]*3 +
+                 ["P"]*5 + ["S"]*8 + ["P"]*3)  # List of treatment of animals.
 
 # %% Get paths of videos and csv files
 paths_coordinates = psy_beh.get_file_paths(FOLDER_PATH, COORDINATE_FILE_TYPE)
@@ -166,7 +165,7 @@ for video_idx, video_file in enumerate(paths_vid):
 # - animal must also be looking at object.
 
 START_FRAME = np.round(START_SEC*FRAMERATE).astype(int)
-END_FRAME = np.round(END_SEC*FRAMERATE).astype(int)
+END_FRAME = np.round(END_SEC*FRAMERATE).astype(int) - 1
 
 
 def get_exploration_metrics(cup_roi, cup):
@@ -330,33 +329,82 @@ column_labels = ["Empty cup time (s)", "Social cup time (s)", "Social preference
                  "Distance travelled (cm)", "Velocity (cm/s)"]
 data_all = data_summary_df
 
+
+# %% Data frames long format for empty vs. social comparisons.
+def df_long(df_wide, variable_name, var_keep):
+    cols_to_keep = ["Animal_ID", "Sex", "Institution", "Treatment"] + var_keep
+    df_wide = df_wide[cols_to_keep]
+    df_long = pd.melt(df_wide,
+                      id_vars=["Animal_ID", "Sex", "Institution", "Treatment"],
+                      var_name='Zone_type',
+                      value_name=variable_name)
+    df_long['Zone_type'] = df_long['Zone_type'].astype(str).apply(
+        lambda x: "empty" if "empty" in x.lower() else x)
+    df_long['Zone_type'] = df_long['Zone_type'].astype(str).apply(
+        lambda x: "social" if "social" in x.lower() else x)
+    df_long['Zone_type'] = df_long['Zone_type'].astype(str).apply(
+        lambda x: "center" if "center" in x.lower() else x)
+    return df_long
+
+
+variable_names = ["cup_time", "cup_latency", "cup_visits", "chamber_time", "chamber_distance"]
+vars_to_keep = [["Empty_cup_time", "Social_cup_time"],
+                ["Latency_empty", "Latency_social"],
+                ["Visits_empty", "Visits_social"],
+                ["Empty_chamber_time", "Social_chamber_time"],
+                ["Distance_empty_chamber", "Distance_social_chamber"]]
+
+empty_social_dict = {}
+for var_i, variable in enumerate(variable_names):
+    empty_social_dict[variable] = df_long(data_all, variable, vars_to_keep[var_i])
+
+
 # %% Do statistical tests.
 stats_summary_results = {}
 for col in column_names:
     stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
 
-# %% Plot data.
-os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
+stats_empty_social_results = {}
+for col in variable_names:
+    stats_empty_social_results[col] = psy_stats.stats_treatment_sex_third(empty_social_dict[col],
+                                                                          col, "Zone_type",
+                                                                          third_factor_sex=True)
 
+# %% Plot summary data.
+os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
 fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5))
+
 for col_i, col in enumerate(column_names):
     psy_plot.plot_individual_lab(ax[col_i], data_summary_df, col, column_labels[col_i],
                                  INSTITUTION, stats_summary_results[col]["significance"])
-plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "summary_data_plots.png"))
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "SIT_summary_data_plots.png"))
+plt.close()
+
+# %% Plot empty vs. social comparisons
+ylabels = ["Cup time (s)", "Cup latency (s)", "Cup visits",
+           "Chamber time (%)", "Chamber distance (cm)"]
+fig, ax = plt.subplots(1, len(variable_names), figsize=(1.2*len(variable_names), 1.5))
+for col_i, col in enumerate(variable_names):
+    psy_plot.plot_pairs(ax[col_i], empty_social_dict[col], col, ylabels[col_i], INSTITUTION,
+                        stats_empty_social_results[col]["significance"])
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "SIT_empty_social_comparisons.png"))
 plt.close()
 
 # %% Plot animal traces for visualization.
 for video_idx, video_path in enumerate(paths_vid):
-    fig, ax = plt.subplots()
-    psy_plot.plot_traces(ax, video_path, body_coords[video_idx], nose_coords[video_idx])
-    # show object rois.
-    ax.imshow(empty_cup_roi[video_idx], cmap='Reds', alpha=0.25)
-    ax.imshow(social_cup_roi[video_idx], cmap='Reds', alpha=0.25)
-    # show open field base rectangle
-    psy_plot.plot_roi_coords(ax, empty_chamber[video_idx])
-    psy_plot.plot_roi_coords(ax, social_chamber[video_idx])
-    plt.savefig(os.path.join(FOLDER_PATH, "saved_data", f"{video_idx:02}_trace.png"))
-    plt.close()
+    mouse_name = os.path.splitext(vid_ids[video_idx])[0]
+    path_trace = os.path.join(FOLDER_PATH, "saved_data", f"{mouse_name}_trace.png")
+    if os.path.exists(path_trace) is False:
+        fig, ax = plt.subplots()
+        psy_plot.plot_traces(ax, video_path, body_coords[video_idx], nose_coords[video_idx])
+        # show object rois.
+        ax.imshow(empty_cup_roi[video_idx], cmap='Reds', alpha=0.25)
+        ax.imshow(social_cup_roi[video_idx], cmap='Reds', alpha=0.25)
+        # show open field base rectangle
+        psy_plot.plot_roi_coords(ax, empty_chamber[video_idx])
+        psy_plot.plot_roi_coords(ax, social_chamber[video_idx])
+        plt.savefig(path_trace)
+        plt.close()
 
 # %% Save raw data if wanted.
 data_all.to_csv(os.path.join(FOLDER_PATH, "saved_data", 'SIT_data.csv'), index=False)

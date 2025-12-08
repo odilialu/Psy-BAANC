@@ -36,10 +36,15 @@ import functions.psybaanc_stats as psy_stats
 import functions.psybaanc_plot as psy_plot
 
 matplotlib.use('Agg')
+# Dataframe print settings (do not change)
+pd.set_option('display.max_rows', None)  # Display all rows
+pd.set_option('display.max_columns', None)  # Display all columns
+pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
+pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
 # %% Variables to change
 INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
-FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/NOE_NOR/NOE/Analyze"  # path to folder with data
+FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/NOEPers/all"  # path to folder with data
 VIDEO_TYPE = "mp4"  # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
 START_SEC = 0  # the time in seconds that you wish to begin analysis.
@@ -59,15 +64,9 @@ COORDINATES_CM = False  # Are your coordinates in centimeters? (And not pixels)
 OBJECT_ONE_SHAPE = "circle"  # options: "circle", "ellipse", "rectangle", "polygon"
 OBJECT_TWO_SHAPE = "circle"  # options: "circle", "ellipse", "rectangle", "polygon"
 
-sex_key = ["M"]*20 + ["F"]*20  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
-treatment_key = (["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5 +
-                 ["S"]*5 + ["S"]*5 + ["P"]*5 + ["P"]*5)  # List of treatment of animals.
-
-# Dataframe print settings (do not change)
-pd.set_option('display.max_rows', None)  # Display all rows
-pd.set_option('display.max_columns', None)  # Display all columns
-pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
-pd.set_option('display.max_colwidth', None)  # Display full content of each column
+sex_key = ["M"]*19 + ["F"]*20  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
+treatment_key = (["P"]*4 + ["S"]*5 + ["P"]*5 + ["S"]*5 +
+                 ["P"]*5 + ["S"]*5 + ["S"]*5 + ["P"]*5)  # List of treatment of animals.
 
 # %% Get paths of videos and csv files
 paths_coordinates = psy_beh.get_file_paths(FOLDER_PATH, COORDINATE_FILE_TYPE)
@@ -165,7 +164,7 @@ for video_idx, video_file in enumerate(paths_vid):
 # - animal must also be looking at object.
 
 START_FRAME = np.round(START_SEC*FRAMERATE).astype(int)
-END_FRAME = np.round(END_SEC*FRAMERATE).astype(int)
+END_FRAME = np.round(END_SEC*FRAMERATE).astype(int) - 1
 
 
 def get_exploration_metrics(object_roi, object_mask):
@@ -372,20 +371,23 @@ fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5
 for col_i, col in enumerate(column_names):
     psy_plot.plot_individual_lab(ax[col_i], data_summary_df, col, column_labels[col_i],
                                  INSTITUTION, stats_summary_results[col]["significance"])
-plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "summary_data_plots.png"))
+plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "NOE_summary_data_plots.png"))
 plt.close()
 
 # %% Plot animal traces for visualization
 for video_idx, video_path in enumerate(paths_vid):
-    fig, ax = plt.subplots()
-    psy_plot.plot_traces(ax, video_path, body_coords[video_idx], nose_coords[video_idx])
-    # show object rois.
-    ax.imshow(object_one_roi[video_idx], cmap='Reds', alpha=0.25)
-    ax.imshow(object_two_roi[video_idx], cmap='Reds', alpha=0.25)
-    # show open field base rectangle
-    psy_plot.plot_roi_coords(ax, open_field_base[video_idx])
-    plt.savefig(os.path.join(FOLDER_PATH, "saved_data", f"{video_idx:02}_trace.png"))
-    plt.close()
+    mouse_name = os.path.splitext(vid_ids[video_idx])[0]
+    path_trace = os.path.join(FOLDER_PATH, "saved_data", f"{mouse_name}_trace.png")
+    if os.path.exists(path_trace) is False:
+        fig, ax = plt.subplots()
+        psy_plot.plot_traces(ax, video_path, body_coords[video_idx], nose_coords[video_idx])
+        # show object rois.
+        ax.imshow(object_one_roi[video_idx], cmap='Reds', alpha=0.25)
+        ax.imshow(object_two_roi[video_idx], cmap='Reds', alpha=0.25)
+        # show open field base rectangle
+        psy_plot.plot_roi_coords(ax, open_field_base[video_idx])
+        plt.savefig(path_trace)
+        plt.close()
 
 # %% Save raw data
 data_all.to_csv(os.path.join(FOLDER_PATH, "saved_data", 'NOE_data.csv'), index=False)
