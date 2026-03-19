@@ -1,0 +1,365 @@
+---
+title: "Psy-BAANC Meta Analysis Pipeline"
+output: html_notebook
+---
+```{r}
+# Load necessary libraries
+library(glmnet)       # Lasso variable selection
+library(lme4)         # LME models
+library(MuMIn)        # for R squared
+library(effectsize)   # for standardized beta weights
+library(broom.mixed)  # for confidence intervals 
+```
+
+```{r}
+# fit_lasso_select: Lasso variable selection using glmnet
+#                   output: return(list(selected_predictors = selected, removed_predictors = removed, 
+#                   best_lambda = lambda, df_clean = df_clean, lasso_model = lasso_model)))
+
+fit_lasso_select <- function(df, y_value, lambda = NULL, 
+                              interaction_vars = c(),
+                              factor_vars = c("treatment", "stress", "sex", "analysis_coordinates", "analysis_variables", "exptr_sex", 
+                              "object_type", "counterbalanced_cup_location", "mouse in cup", "counterbalanced_location", "same_treatment","expt_time_bin", "expt_time_bin_ex1", "lighting", "experiment_location", 
+                              "experiment_room_colony_distance", "transport", "acclimation_room","enrichment","mouse_source", "injection_context"),
+                              numeric_vars = c("age", "weight", "timepoint", "handling_acc", "injection_acc", "lab_acc", "h_wall", "L1_3C", "L2_3C", 
+                              "L", "w", "h_floor", "epm_lip", "center_defined", "distance_wall", "distance_objects", "object_base_area", "object_height", 
+                              "social_cup_baseArea", "social_cup_height", "diameter", "water_depth", "water_temp", "tone_frequency", "tone_amplitude", 
+                              "social_cond_mice", "cagemates", "other_mice", "prior_expts")) {
+  
+
+  # Set reference level for treatment, sex, and stress
+  if ("treatment" %in% colnames(df)) {
+    df$treatment <- if ("S" %in% levels(as.factor(df$treatment))) relevel(as.factor(df$treatment), ref = "S") else as.factor(df$treatment)
+  }
+  df$sex       <- if ("M" %in% levels(as.factor(df$sex)))       relevel(as.factor(df$sex),       ref = "M") else as.factor(df$sex)
+  if ("stress" %in% names(df)) {
+    df$stress  <- if ("Ctrl" %in% levels(as.factor(df$stress))) relevel(as.factor(df$stress),    ref = "Ctrl") else as.factor(df$stress)
+  }
+
+  # Create list of fixed effect candidates
+  fixed_effects_candidates <- c("treatment", "stress", "sex",   "exptr_sex", 
+                              "object_type",  "mouse in cup", "same_treatment","expt_time_bin", "expt_time_bin_ex1", "lighting",   
+                              "enrichment","mouse_source", "injection_context", "lighting_open_arms", "lighting_closed_arms", 
+                              "experiment_location", "L2_3C", "distance_objects", "object_base_area", "social_cup_baseArea", 
+                              "experiment_room_colony_distance", "transport", "acclimation_room", "age", "weight", "timepoint", 
+                              "handling_acc", "injection_acc", "lab_acc", "h_wall", "L1_3C", "L", "w", "h_floor", "epm_lip", 
+                              "center_defined", "distance_wall", "object_height", "social_cup_height", "diameter", "water_depth", 
+                              "water_temp", "tone_frequency", "tone_amplitude", "social_cond_mice", "cagemates", "other_mice", "prior_expts")
+
+  
+  # Create list of variables excluded from fixed_effects response variable, ID variables, grouping variables
+  exclude_vars <- c(y_value, "mouse_ID", "cage_ID", "lab", "institution")
+  
+  # Find columns that match candidates AND are not excluded
+  fixed_effects <- intersect(fixed_effects_candidates, colnames(df))
+  fixed_effects <- setdiff(fixed_effects, exclude_vars)
+  
+  if (!y_value %in% colnames(df)) {
+    stop(paste("The specified y_value column", y_value, "is not in the data frame"))
+  }
+  
+  # Remove rows with NA
+  required_cols <- c(y_value, fixed_effects, "lab")
+  df_clean <- df[complete.cases(df[, required_cols]), ]
+
+  # Make sure lab is treated as a factor
+  df_clean$lab <- as.factor(df_clean$lab)
+  
+  # Output documentation
+  cat("\n=== Data Preparation ===\n")
+  cat(paste("Outcome variable:", y_value, "\n"))
+  
+  # Convert variables to factor or numeric
+  cat("\n--- Converting variable types ---\n")
+  
+  # Separate factors and numerics that actually exist in the data
+  actual_factor_vars <- intersect(factor_vars, fixed_effects)
+  actual_numeric_vars <- intersect(numeric_vars, fixed_effects)
+  
+  # Convert to factors
+  for (var in actual_factor_vars) {
+    df_clean[[var]] <- as.factor(df_clean[[var]])
+    cat(paste("Factor:", var, "with", length(levels(df_clean[[var]])), "levels\n"))
+  }
+  
+  # Convert to numeric
+  for (var in actual_numeric_vars) {
+    df_clean[[var]] <- as.numeric(as.character(df_clean[[var]]))
+    cat(paste("Numeric:", var, "\n"))
+  }
+  
+  cat(paste("\nRemoved", nrow(df) - nrow(df_clean), "rows with missing data\n"))
+  cat(paste("Using", nrow(df_clean), "complete observations\n\n"))
+  
+  # If no valid predictors, stop
+  if (length(fixed_effects) == 0) {
+    stop("No valid predictors found after filtering!")
+  }
+  
+  # Build formula with interactions if specified
+  main_effects <- fixed_effects
+  
+  if ("treatment" %in% fixed_effects && length(interaction_vars) > 0) {
+    other_predictors <- intersect(interaction_vars, fixed_effects)
+    other_predictors <- setdiff(other_predictors, "treatment")
+    
+    if (length(other_predictors) > 0) {
+      interactions <- paste("treatment", other_predictors, sep = ":")
+      all_terms <- c(main_effects, interactions)
+    } else {
+      all_terms <- main_effects
+    }
+  } else {
+    all_terms <- main_effects
+  }
+  
+  # Create lasso model formula + matrix
+  formula_string <- paste("~", paste(all_terms, collapse = " + "))
+  predictor_formula <- as.formula(formula_string)
+  
+  cat("=== Building Model Matrix ===\n")
+  cat(paste("Formula:", formula_string, "\n\n"))
+  
+  X <- model.matrix(predictor_formula, data = df_clean)[, -1, drop = FALSE]  # Remove intercept
+  y <- df_clean[[y_value]]
+  
+  cat(paste("Model matrix dimensions:", nrow(X), "rows x", ncol(X), "columns\n\n"))
+  
+  # Fit lasso model using glmnet
+  cat("=== Lambda Selection (glmnet) ===\n")
+  
+  if (is.null(lambda)) {
+    # Use 10-fold cross-validation to find optimal lambda
+    cv_lasso <- cv.glmnet(X, y, alpha = 1, nfolds = 10)
+
+    # Choosing lambda.min which is the lambda that minimizes error in cross-validation
+    lambda <- cv_lasso$lambda.min
+    
+    cat(paste("Selected lambda (via CV):", round(lambda, 4), "\n"))
+    cat(paste("Lambda 1SE:", round(cv_lasso$lambda.1se, 4), "\n\n"))
+    
+    # Fit final model with selected lambda
+    lasso_model <- glmnet(X, y, alpha = 1, lambda = lambda)
+  } else {
+    cat(paste("Using provided lambda:", lambda, "\n\n"))
+    lasso_model <- glmnet(X, y, alpha = 1, lambda = lambda)
+  }
+  
+  # Extract non-zero coefficients
+  coefs <- coef(lasso_model)
+  coef_matrix <- as.matrix(coefs)
+  selected_coefs <- coef_matrix[coef_matrix[,1] != 0, , drop = FALSE]
+  selected <- rownames(selected_coefs)
+  selected <- selected[selected != "(Intercept)"]
+  
+  # Get removed coefficients
+  all_coef_names <- rownames(coef_matrix)
+  all_coef_names <- all_coef_names[all_coef_names != "(Intercept)"]
+  removed <- setdiff(all_coef_names, selected)
+  
+  cat("=== Variable Selection Results ===\n")
+  cat(paste("Selected:", length(selected), "predictors\n"))
+  if (length(selected) > 0) {
+    cat(paste("  ", paste(selected, collapse = ", "), "\n"))
+  }
+  cat(paste("Removed:", length(removed), "predictors\n\n"))
+  
+  return(list(
+    selected_predictors = selected,
+    removed_predictors = removed,
+    best_lambda = lambda,
+    df_clean = df_clean,
+    lasso_model = lasso_model
+  ))
+}
+
+# fit_final_lmer: use lasso-selected variables to create a lmer model
+#                   output: lmer model
+fit_final_lmer <- function(lasso_result, y_value) {
+  
+  selected <- lasso_result$selected_predictors
+  df_clean <- lasso_result$df_clean
+  
+  # Parse selected to get base variable names
+  all_cols <- colnames(df_clean)
+  
+  # Extract main effects and interactions separately
+  selected_main <- character(0)
+  selected_interactions <- character(0)
+  
+  exclude_from_fixed <- c("lab", "mouse_ID", "cage_ID", "institution")
+
+  # Handle suffixes for factor variables pulled from lasso model results
+  for (pred in selected) {
+    if (grepl(":", pred)) {
+      parts <- strsplit(pred, ":")[[1]]
+      base_parts <- sapply(parts, function(p) {
+        match <- all_cols[sapply(all_cols, function(col) startsWith(p, col))]
+        match <- setdiff(match, exclude_from_fixed)
+        match <- match[order(nchar(match), decreasing = TRUE)]
+        if (length(match) > 0) return(match[1]) else return(NA)
+      })
+      if (!any(is.na(base_parts))) {
+        selected_interactions <- c(selected_interactions, paste(base_parts, collapse = ":"))
+      }
+    } else {
+      match <- all_cols[sapply(all_cols, function(col) startsWith(pred, col))]
+      match <- setdiff(match, exclude_from_fixed) 
+      match <- match[order(nchar(match), decreasing = TRUE)]
+      if (length(match) > 0) {
+        selected_main <- c(selected_main, match[1])
+      }
+    }
+  }
+  
+  # Remove doubles from factors with multiple levels
+  selected_main <- unique(selected_main)
+  selected_interactions <- unique(selected_interactions)
+
+  # Always want treatment, sex, or stress to be in the lmer formula, regardless of if lasso model selected them
+  mandatory_vars <- c( "treatment", "sex", "stress") # 
+  mandatory_vars <- intersect(mandatory_vars, colnames(df_clean))  # only if they exist in data
+  selected_main <- unique(c(mandatory_vars, selected_main))
+
+  cat("=== Final Model ===\n")
+  cat(paste("Main effects:", paste(selected_main, collapse = ", "), "\n"))
+  if (length(selected_interactions) > 0) {
+    cat(paste("Interactions:", paste(selected_interactions, collapse = ", "), "\n"))
+  }
+  
+  # Build formula
+  if (length(selected_main) == 0 && length(selected_interactions) == 0) {
+    final_formula <- as.formula(paste(y_value, "~ 1 + (1 | lab)"))
+  } else {
+    formula_parts <- c()
+    if (length(selected_main) > 0) {
+      formula_parts <- c(formula_parts, paste(selected_main, collapse = " + "))
+    }
+    if (length(selected_interactions) > 0) {
+      formula_parts <- c(formula_parts, paste(selected_interactions, collapse = " + "))
+    }
+    
+    final_formula <- as.formula(paste(y_value, "~", 
+                                      paste(formula_parts, collapse = " + "), 
+                                      "+ (1 | lab)"))
+  }
+  
+  cat(paste("Formula:", deparse(final_formula, width.cutoff = 500), "\n\n"))
+  
+  model <- suppressWarnings(lmer(final_formula, data = df_clean, REML = TRUE))
+  
+  # Check for issues
+  if (isSingular(model)) {
+    cat("NOTE: Random effect variance is essentially zero. Lab has minimal effect.\n\n")
+  }
+  
+  return(model)
+}
+
+
+```
+
+```{r}
+# export_stats() - uses tidy() in broom.mixed package and standardize_parameters() in effectsize package to get model statistics
+#                   output: df with effect size, variance, confidence intervals, standardized beta weights, and R2 values for a single expt model
+
+export_stats <- function(model) {
+  
+  # Confidence intervals
+  ci_95 <- tidy(model, effects = "fixed", conf.int = TRUE, conf.level = 0.95) %>%
+    rename(ci_low_95 = conf.low, ci_high_95 = conf.high)
+  
+  ci_99 <- tidy(model, effects = "fixed", conf.int = TRUE, conf.level = 0.99) %>%
+    rename(ci_low_99 = conf.low, ci_high_99 = conf.high)
+  
+  ci_999 <- tidy(model, effects = "fixed", conf.int = TRUE, conf.level = 0.999) %>%
+    rename(ci_low_999 = conf.low, ci_high_999 = conf.high)
+  
+  # Standardized betas
+  std <- effectsize::standardize_parameters(model, method = "posthoc") %>%
+    rename(term = Parameter, std_beta = Std_Coefficient) %>%
+    select(term, std_beta)
+  
+  # Rsquared
+  r2 <- r.squaredGLMM(model)
+  
+  # Join all together for output
+  combined <- ci_95 %>%
+    left_join(ci_99 %>% select(term, ci_low_99, ci_high_99), by = "term") %>%
+    left_join(ci_999 %>% select(term, ci_low_999, ci_high_999), by = "term") %>%
+    left_join(std, by = "term") %>%
+    mutate(R2_marginal = r2[1, "R2m"],
+           R2_conditional = r2[1, "R2c"])
+  
+  return(combined)
+}
+```
+
+```{r}
+# check_and_save_residuals() - check and save histogram of residuals of lmer model
+#                   output: png of model residuals histogram
+
+check_and_save_residuals <- function(model, model_name = "model") {
+  
+  # Extract residuals
+  resids <- resid(model)
+  
+  # Create filename with path 
+  filename <- paste0("/Users/katrinawhite/Projects/R/PsyBAANC Meta/results/Residuals/", model_name, "_residual_histogram.png")
+  
+  # Save to current directory
+  png(filename = filename, width = 800, height = 600)
+  
+  # Create histogram
+  hist(resids, breaks = 30,
+       main = paste("Histogram of Residuals -", model_name),
+       xlab = "Residuals",
+       col = "lightblue",
+       probability = TRUE)
+  
+  # Add normal curve for comparison
+  curve(dnorm(x, mean = mean(resids), sd = sd(resids)),
+        add = TRUE, col = "red", lwd = 2)
+  
+  # Add vertical line at zero
+  abline(v = 0, col = "darkred", lwd = 2, lty = 2)
+  
+  # Close and save
+  dev.off()
+}
+```
+
+```{r}
+# Example of usage
+# Step 1: Load data frame with an expt's meta data
+dataframe = read.csv("expt.csv")
+y = "y_value"
+
+# Step 2: Run lasso variable selection with glmnet
+lasso_coefficients <- fit_lasso_select(
+  df = dataframe, 
+  y_value = y,
+  interaction_vars = c()  # Specify interactions if any
+)
+
+# Step 3: fit final lmer model
+final_model <- fit_final_lmer(lasso_coefficients, y)
+
+# View results
+summary(final_model)
+
+# Export Stats
+write.csv(export_stats(final_model), file = "results.csv", row.names = FALSE)
+
+# Check and save residuals
+check_and_save_residuals(final_model, model_name = "model")
+
+# Get null model summary and ICC
+dataframe = read.csv("expt.csv")
+null <- lme4::lmer(y_value ~ 1 + (1 | lab), dataframe)
+summary(null)
+r.squaredGLMM(null)
+
+```
+
+
