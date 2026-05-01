@@ -38,5 +38,4 @@ pip install numpy pandas matplotlib opencv-python shapely statsmodels scipy scik
 
 6. **Update data:**
 
-* Update supplementary table 1 (raw data) with data outputted from script, which is auto-saved as a CSV file within a subfolder called "saved_data" within your project's folder. Link to supplementary table 1: https://docs.google.com/spreadsheets/d/1jZRU8h_juDAiZj3U_H3D_dsHmteQ5KVj/edit?usp=sharing&ouid=106513721789887588563&rtpof=true&sd=true. Use Lammel lab's inputs as reference. 
-* Notify Odilia when completed. 
+* Update supplementary table 1 (raw data) with data outputted from script, which is auto-saved as a CSV file within a subfolder called "saved_data" within your project's folder.
