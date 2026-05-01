@@ -228,11 +228,13 @@ latency_exploration = np.min(np.vstack((object_one_latency, object_two_latency))
 # %% Anxiety-related behaviors analysis
 # divide the open field base into N_BOXES number of equal portions.
 # From the boxes, define edge, center, and corner ROIs.
+cm_to_pixels_x = np.empty(len(paths_vid))
+cm_to_pixels_y = np.empty(len(paths_vid))
 for video_idx, video_file in enumerate(paths_vid):
     open_field_width = open_field_base[video_idx][1] - open_field_base[video_idx][0]
     open_field_length = open_field_base[video_idx][3] - open_field_base[video_idx][2]
-    cm_to_pixels_x = LENGTH_CM/open_field_width
-    cm_to_pixels_y = LENGTH_CM/open_field_length
+    cm_to_pixels_x[video_idx] = LENGTH_CM/open_field_width
+    cm_to_pixels_y[video_idx] = LENGTH_CM/open_field_length
 
     n_rows = int(np.sqrt(N_BOXES))
     sub_width = open_field_width / n_rows
@@ -309,14 +311,14 @@ velocity = np.empty(len(paths_vid))
 for video_idx, vid_path in enumerate(paths_vid):
     # get distance array: distance travelled per frame.
     diff_array = np.diff(body_coords[video_idx], axis=0)
-    diff_array[:, 0] = diff_array[:, 0] * cm_to_pixels_x
-    diff_array[:, 1] = diff_array[:, 1] * cm_to_pixels_y
+    diff_array[:, 0] = diff_array[:, 0] * cm_to_pixels_x[video_idx]
+    diff_array[:, 1] = diff_array[:, 1] * cm_to_pixels_y[video_idx]
     distance_array = np.sqrt((diff_array[:, 0]**2) + (diff_array[:, 1]**2))
     if len(distance_array) < END_FRAME[video_idx]-1:
         print(
             "WARNING:", vid_path, "does not have the full analysis period present."
             " Zero-padding distance array."
-            )
+        )
         distance_array = np.pad(
             distance_array,
             (0, END_FRAME[video_idx] - len(distance_array)),
@@ -336,10 +338,10 @@ for video_idx, vid_path in enumerate(paths_vid):
 
 # %% Create data dictionary for summary data.
 data_summary_dict = {
-    'Animal_ID': paths_vid,
-    'Sex': sex_key,
-    'Treatment': treatment_key,
-    'Institution': INSTITUTION,
+    'mouse_ID': paths_vid,
+    'sex': sex_key,
+    'treatment': treatment_key,
+    'institution': INSTITUTION,
     'Avg_time': average_time,
     'Latency_explore': latency_exploration,
     'Object_one_time': object_one_time,
@@ -349,7 +351,7 @@ data_summary_dict = {
     'Time_Corners': time_in_corners,
     'Distance': distance_travelled,
     'Velocity': velocity
-    }
+}
 
 data_summary_df = pd.DataFrame(data_summary_dict)
 column_names = data_summary_df.columns[4:].tolist()
@@ -361,8 +363,10 @@ data_all = data_summary_df
 
 # %% Do statistical tests
 stats_summary_results = {}
+stats_summary_results_print = {}
 for col in column_names:
-    stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
+    stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex(
+        data_summary_df, col)
 
 # %% Plot data
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)

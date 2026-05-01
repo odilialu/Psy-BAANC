@@ -31,8 +31,8 @@ pd.set_option('display.width', 1000)  # Adjust display width to prevent line bre
 pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
 # %% Variables to change
-INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
-DATA_PATH = r"Y:\PsyBAANC\paperExperiments\chronic CORT\SPT\SPT_edited_251204.xlsx"
+INSTITUTION = "Stanford"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
+DATA_PATH = r"Y:\PsyBAANC\figures\All labs/cort_spt.xlsx"
 
 # %% Get data
 mouse_key = pd.read_excel(DATA_PATH)
@@ -47,40 +47,42 @@ pref_score = sucrose_consumed/total_consumed
 
 # %% Create data dictionary for summary data.
 data_summary_dict = {
-    'Animal_ID': mouse_id,
-    'Sex': sex_key,
-    'Treatment': treatment_key,
-    'Stress': stress_key,
-    'Institution': INSTITUTION,
+    'mouse_ID': mouse_id,
+    'sex': sex_key,
+    'treatment': treatment_key,
+    'stress': stress_key,
+    'institution': INSTITUTION,
     'Water_consumed': water_consumed,
     'Sucrose_consumed': sucrose_consumed,
     'Total_consumed': total_consumed,
     'Preference_score': pref_score
-    }
+}
 
 data_summary_df = pd.DataFrame(data_summary_dict)
 column_names = data_summary_df.columns[-4:].tolist()
 column_labels = ["Water consumed (g)", "Sucrose consumed (g)", "Total consumed (g)",
-                 "Preference Score"]
+                 "Sucrose Pref index"]
 data_all = data_summary_df
 
 # %% Do statistical tests.
 stats_summary_results = {}
+stats_summary_results_print = {}
 for col in column_names:
-    stats_summary_results[col] = psy_stats.stats_treatment_sex_stress(data_summary_df, col)
+    stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex_stress(
+        data_summary_df, col)
 
 # %% Plot all data
 BASE_FOLDER = os.path.split(DATA_PATH)[0]
 os.makedirs(os.path.join(BASE_FOLDER, "saved_data"), exist_ok=True)
-# ymin = [0, 0, 0, 0]
-# ymax = [4, 15, 20, 1]
+ymin = [0, 0, 0, 0]
+ymax = [4, 15, 20, 1.5]
 fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5))
 for col_i, col in enumerate(column_names):
     psy_plot.plot_bars_thirdfactor(ax[col_i], data_summary_df, col, column_labels[col_i],
                                    INSTITUTION, stars=stats_summary_results[col]["significance"],
-                                   # ymax=ymax[col_i], ymin=ymin[col_i]
+                                   ymax=ymax[col_i], ymin=ymin[col_i]
                                    )
-plt.savefig(os.path.join(BASE_FOLDER, "saved_data", "SPT_summary_data_plots.png"))
+plt.savefig(os.path.join(BASE_FOLDER, "saved_data", "SPT_summary_data_plots.svg"))
 plt.close()
 
 # %% Save raw data if wanted.

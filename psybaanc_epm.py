@@ -37,6 +37,7 @@ pd.set_option('display.max_columns', None)  # Display all columns
 pd.set_option('display.width', 1000)  # Adjust display width to prevent line breaks
 pd.set_option('display.max_colwidth', None)  # Display full content of each column
 
+
 # %% Variables to change
 INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
 FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/EPMAcute/Videos/all"  # path to folder with data
@@ -187,16 +188,16 @@ for video_idx, video_path in enumerate(paths_vid):
 
 # %% Create data dictionary for summary data.
 data_summary_dict = {
-    'Animal_ID': paths_vid,
-    'Sex': sex_key,
-    'Treatment': treatment_key,
-    'Stress': stress_key,
-    'Institution': INSTITUTION,
+    'mouse_ID': paths_vid,
+    'sex': sex_key,
+    'treatment': treatment_key,
+    'stress': stress_key,
+    'institution': INSTITUTION,
     'Time_Open': time_open,
     'Time_Center': time_center,
     'Latency_Open': latency_open,
     'Distance': distance_travelled,
-    }
+}
 
 data_summary_df = pd.DataFrame(data_summary_dict)
 column_names = data_summary_df.columns[-4:].tolist()
@@ -206,18 +207,24 @@ data_all = data_summary_df
 
 # %% Do statistical tests.
 stats_summary_results = {}
+stats_summary_results_print = {}
 for col in column_names:
     if "Stress" not in stress_key:
-        stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
+        data_summary_df_temp = data_summary_df.drop("stress", axis=1)
+        stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex(
+            data_summary_df_temp, col)
     else:
-        stats_summary_results[col] = psy_stats.stats_treatment_sex_stress(data_summary_df, col)
+        stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex_stress(
+            data_summary_df, col)
+
 # %% Plot all data
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
 
 fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5))
 for col_i, col in enumerate(column_names):
     if "Stress" not in stress_key:
-        psy_plot.plot_individual_lab(ax[col_i], data_summary_df, col, column_labels[col_i],
+        data_summary_df_temp = data_summary_df.drop("stress", axis=1)
+        psy_plot.plot_individual_lab(ax[col_i], data_summary_df_temp, col, column_labels[col_i],
                                      INSTITUTION, stats_summary_results[col]["significance"])
     else:
         psy_plot.plot_bars_thirdfactor(ax[col_i], data_summary_df, col, column_labels[col_i],

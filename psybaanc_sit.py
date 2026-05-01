@@ -273,7 +273,7 @@ for video_idx, vid_path in enumerate(paths_vid):
         print(
             "WARNING:", vid_path, "does not have the full analysis period present."
             " Zero-padding distance array."
-            )
+        )
         distance_array = np.pad(
             distance_array,
             (0, END_FRAME[video_idx] - len(distance_array)),
@@ -299,10 +299,10 @@ for video_idx, vid_path in enumerate(paths_vid):
 
 # %% Create data dictionary for summary data.
 data_summary_dict = {
-    'Animal_ID': paths_vid,
-    'Sex': sex_key,
-    'Treatment': treatment_key,
-    'Institution': INSTITUTION,
+    'mouse_ID': paths_vid,
+    'sex': sex_key,
+    'treatment': treatment_key,
+    'institution': INSTITUTION,
     'Empty_cup_time': empty_cup_time,
     'Social_cup_time': social_cup_time,
     'Social_index': social_index,
@@ -317,7 +317,7 @@ data_summary_dict = {
     'Distance_social_chamber': distance_social,
     'Distance_travelled': distance_travelled,
     'Velocity': velocity
-    }
+}
 
 data_summary_df = pd.DataFrame(data_summary_dict)
 column_names = data_summary_df.columns[4:].tolist()
@@ -332,17 +332,17 @@ data_all = data_summary_df
 
 # %% Data frames long format for empty vs. social comparisons.
 def df_long(df_wide, variable_name, var_keep):
-    cols_to_keep = ["Animal_ID", "Sex", "Institution", "Treatment"] + var_keep
+    cols_to_keep = ["mouse_ID", "sex", "institution", "treatment"] + var_keep
     df_wide = df_wide[cols_to_keep]
     df_long = pd.melt(df_wide,
-                      id_vars=["Animal_ID", "Sex", "Institution", "Treatment"],
-                      var_name='Zone_type',
+                      id_vars=["mouse_ID", "sex", "institution", "treatment"],
+                      var_name='zone',
                       value_name=variable_name)
-    df_long['Zone_type'] = df_long['Zone_type'].astype(str).apply(
+    df_long['zone'] = df_long['zone'].astype(str).apply(
         lambda x: "empty" if "empty" in x.lower() else x)
-    df_long['Zone_type'] = df_long['Zone_type'].astype(str).apply(
+    df_long['zone'] = df_long['zone'].astype(str).apply(
         lambda x: "social" if "social" in x.lower() else x)
-    df_long['Zone_type'] = df_long['Zone_type'].astype(str).apply(
+    df_long['zone'] = df_long['zone'].astype(str).apply(
         lambda x: "center" if "center" in x.lower() else x)
     return df_long
 
@@ -361,14 +361,16 @@ for var_i, variable in enumerate(variable_names):
 
 # %% Do statistical tests.
 stats_summary_results = {}
+stats_summary_results_print = {}
 for col in column_names:
-    stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
+    stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex(
+        data_summary_df, col)
 
 stats_empty_social_results = {}
+stats_empty_social_results_print = {}
 for col in variable_names:
-    stats_empty_social_results[col] = psy_stats.stats_treatment_sex_third(empty_social_dict[col],
-                                                                          col, "Zone_type",
-                                                                          third_factor_sex=True)
+    stats_empty_social_results[col], stats_empty_social_results_print[col] = psy_stats.stats_treatment_sex_third(
+        empty_social_dict[col], col, "zone", third_factor_compare=True, third_paired=True)
 
 # %% Plot summary data.
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
@@ -385,8 +387,8 @@ ylabels = ["Cup time (s)", "Cup latency (s)", "Cup visits",
            "Chamber time (%)", "Chamber distance (cm)"]
 fig, ax = plt.subplots(1, len(variable_names), figsize=(1.2*len(variable_names), 1.5))
 for col_i, col in enumerate(variable_names):
-    psy_plot.plot_pairs(ax[col_i], empty_social_dict[col], col, ylabels[col_i], INSTITUTION,
-                        stats_empty_social_results[col]["significance"])
+    psy_plot.plot_pairs(ax[col_i], empty_social_dict[col], col, ylabels[col_i], INSTITUTION, 'zone',
+                        stats_empty_social_results[col]["significance"], ylabel=True)
 plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "SIT_empty_social_comparisons.png"))
 plt.close()
 

@@ -24,8 +24,8 @@ pd.set_option('display.max_colwidth', None)  # Display full content of each colu
 
 
 # %% Variables to change
-INSTITUTION = "Berkeley 1"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
-FOLDER_PATH = r"Y:/PsyBAANC/paperExperiments/chronic CORT/FST/cropped"  # path to folder with data
+INSTITUTION = "Berkeley 2"  # Stanford, Berkeley 1, Berkeley 2, UCSF 1, UCSF 2
+FOLDER_PATH = r"C:/Users/olu/Downloads/Archive"  # path to folder with data
 VIDEO_TYPE = "mp4"  # options: "mp4", "avi", others also likely OK.
 COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
 
@@ -33,12 +33,13 @@ COORDINATE_FILE_TYPE = "csv"  # options: "csv", "xlsx"
 # EITHER write out condition in list format OR import data from excel file.
 
 # Option to write out conditions in list format, or set variables as "None".
-sex_key = None  # List of sex of the animals, i.e., ["M", "F", "M", etc.]
-treatment_key = None  # List of treatment of animals.
-stress_key = None  # List of animal's stress condition. Options: np.nan, "Ctrl", "Stress"
+sex_key = ["F"]*38 + ["M"]*38
+treatment_key = (["S"]*19 + ["P"]*19 + ["S"]*19 + ["P"]*19)
+stress_key = (["Ctrl"]*10 + ["Stress"]*9 + ["Ctrl"]*9 + ["Stress"]*10 + ["Ctrl"]*10 + ["Stress"]*9 +
+              ["Ctrl"]*10 + ["Stress"]*9)  # List of animal's stress condition. Options: np.nan, "Ctrl", "Stress"
 
 # Option to get list of mouse conditions from excel file. Or set mouse_key_path to "None".
-mouse_key_path = r"Y:\PsyBAANC\paperExperiments\chronic CORT\Mouse_key.xlsx"  # edit as needed
+mouse_key_path = None  # r"Y:\PsyBAANC\paperExperiments\chronic CORT\Mouse_key.xlsx"  # edit as needed
 if mouse_key_path is not None:
     mouse_key = pd.read_excel(mouse_key_path)
     sex_key = mouse_key["Sex"].tolist()
@@ -99,15 +100,15 @@ for path_i, path in enumerate(paths_csv):
 
 # %% Create data dictionary for summary data.
 data_summary_dict = {
-    'Animal_ID': paths_vid,
-    'Sex': sex_key,
-    'Treatment': treatment_key,
-    'Stress': stress_key,
-    'Institution': INSTITUTION,
+    'mouse_ID': paths_vid,
+    'sex': sex_key,
+    'treatment': treatment_key,
+    'stress': stress_key,
+    'institution': INSTITUTION,
     'Immobility': immobility,
     'Struggling_bouts': struggling_bouts_n,
     'Struggling_avg_time': struggling_bouts_time_avg,
-    }
+}
 
 data_summary_df = pd.DataFrame(data_summary_dict)
 column_names = data_summary_df.columns[-3:].tolist()
@@ -116,18 +117,18 @@ data_all = data_summary_df
 
 # %% Do statistical tests.
 stats_summary_results = {}
+stats_summary_results_print = {}
 for col in column_names:
-    stats_summary_results[col] = psy_stats.stats_treatment_sex_stress(data_summary_df, col)
+    stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex_stress(
+        data_summary_df, col)
 
 # %% Plot all data
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
-# ymin = [100, 0, 0]
-# ymax = [300, 40, 15]
+
 fig, ax = plt.subplots(1, len(column_names), figsize=(1.2*len(column_names), 1.5))
 for col_i, col in enumerate(column_names):
     psy_plot.plot_bars_thirdfactor(ax[col_i], data_summary_df, col, column_labels[col_i],
                                    INSTITUTION, stats_summary_results[col]["significance"],
-                                   # ymin=ymin[col_i], ymax=ymax[col_i]
                                    )
 plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "FST_summary_data_plots.png"))
 plt.close()

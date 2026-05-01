@@ -137,11 +137,13 @@ for video_idx, video_file in enumerate(paths_vid):
 
 # Then, divide the open field base into N_BOXES number of equal portions.
 # From the boxes, define edge, center, and corner ROIs.
+cm_to_pixels_x = np.empty(len(paths_vid))
+cm_to_pixels_y = np.empty(len(paths_vid))
 for video_idx, video_file in enumerate(paths_vid):
     open_field_width = open_field_base[video_idx][1] - open_field_base[video_idx][0]
     open_field_length = open_field_base[video_idx][3] - open_field_base[video_idx][2]
-    cm_to_pixels_x = LENGTH_CM[video_idx]/open_field_width
-    cm_to_pixels_y = LENGTH_CM[video_idx]/open_field_length
+    cm_to_pixels_x[video_idx] = LENGTH_CM[video_idx]/open_field_width
+    cm_to_pixels_y[video_idx] = LENGTH_CM[video_idx]/open_field_length
 
     n_rows = int(np.sqrt(N_BOXES))
     sub_width = open_field_width / n_rows  # width of each box.
@@ -266,14 +268,14 @@ velocity_while_moving_bins = np.empty((len(paths_vid), n_intervals))
 for video_idx, vid_path in enumerate(paths_vid):
     # get distance array: distance travelled per frame.
     diff_array = np.diff(body_coords[video_idx], axis=0)
-    diff_array[:, 0] = diff_array[:, 0] * cm_to_pixels_x
-    diff_array[:, 1] = diff_array[:, 1] * cm_to_pixels_y
+    diff_array[:, 0] = diff_array[:, 0] * cm_to_pixels_x[video_idx]
+    diff_array[:, 1] = diff_array[:, 1] * cm_to_pixels_y[video_idx]
     distance_array = np.sqrt((diff_array[:, 0]**2) + (diff_array[:, 1]**2))
     if len(distance_array) < END_FRAME[video_idx]-1:
         print(
             "WARNING:", vid_path, "does not have the full analysis period present."
             " Zero-padding distance array."
-            )
+        )
         distance_array = np.pad(
             distance_array,
             (0, END_FRAME[video_idx] - len(distance_array)),
@@ -335,10 +337,10 @@ for video_idx, vid_path in enumerate(paths_vid):
 # %% Create data dictionary and tables for data of interest.
 # Summary data
 data_summary_dict = {
-    'Animal_ID': paths_vid,
-    'Sex': sex_key,
-    'Treatment': treatment_key,
-    'Institution': INSTITUTION,
+    'mouse_ID': paths_vid,
+    'sex': sex_key,
+    'treatment': treatment_key,
+    'institution': INSTITUTION,
     'Time_Center': time_in_center,
     'Time_Corners': time_in_corners,
     'Distance_in_center': distance_in_center,
@@ -377,17 +379,17 @@ def make_binned_data_df(data_for_df, bin_name, col_name, time_multiplier=5):
 
 
 # Make data dictionary for binned data
-animal_info = pd.DataFrame({"Animal_ID": paths_vid*n_intervals,
-                            "Sex": sex_key*n_intervals,
-                            "Treatment": treatment_key*n_intervals,
-                            "Institution": INSTITUTION})
+animal_info = pd.DataFrame({"mouse_ID": paths_vid*n_intervals,
+                            "sex": sex_key*n_intervals,
+                            "treatment": treatment_key*n_intervals,
+                            "institution": INSTITUTION})
 
 data_to_bin = [time_in_center_bins, time_in_corners_bins,
                distance_in_center_bins, velocity_bins,
                time_moving_bins, velocity_while_moving_bins]
 binned_data_df = []
 for col_i, binned_data in enumerate(data_to_bin):
-    binned_data_df.append(make_binned_data_df(binned_data, "Time", column_names[col_i]))
+    binned_data_df.append(make_binned_data_df(binned_data, "time", column_names[col_i]))
 data_binned_dict = dict(zip(column_names, binned_data_df))
 
 data_binned_dict_flat = {}
@@ -402,11 +404,15 @@ data_all = pd.concat([data_summary_df, data_binned_df], axis=1)
 
 # %% Get stats
 stats_summary_results = {}
+stats_summary_results_print = {}
 stats_binned_results = {}
+stats_binned_results_print = {}
 for col in column_names:
-    stats_summary_results[col] = psy_stats.stats_treatment_sex(data_summary_df, col)
-    stats_binned_results[col] = psy_stats.stats_treatment_sex_third(data_binned_dict[col],
-                                                                    col, 'Time')
+    stats_summary_results[col], stats_summary_results_print[col] = psy_stats.stats_treatment_sex(
+        data_summary_df, col)
+    stats_binned_results[col], stats_binned_results_print[col] = psy_stats.stats_treatment_sex_third(
+        data_binned_dict[col], col, 'time',
+        third_factor_compare=False, third_paired=True)
 
 # %% Plot all results
 os.makedirs(os.path.join(FOLDER_PATH, "saved_data"), exist_ok=True)
@@ -420,10 +426,12 @@ plt.close()
 
 fig, ax = plt.subplots(1, len(column_names), figsize=(1.5*len(column_names), 1.5))
 for col_i, col in enumerate(column_names):
-    psy_plot.plot_over_time(ax[col_i], data_binned_dict, col, column_labels[col_i],
-                            [5+START_SEC, END_SEC/60+5])
+    data_of_interest = data_binned_dict[col]
+    psy_plot.plot_over_time(ax[col_i], data_of_interest, col, column_labels[col_i],
+                            list(range(6)), "time", "Time Interval")
 plt.savefig(os.path.join(FOLDER_PATH, "saved_data", "OFT_time_binned_plots.png"))
 plt.close()
+
 
 # %% Plot animal traces for visualization.
 for video_idx, video_path in enumerate(paths_vid):
